@@ -1,9 +1,9 @@
-einops==0.7.0
+einops==0.4.1
 ffmpeg==1.4
 librosa==0.10.1
 llvmlite==0.41.1
 matplotlib==3.7.5
-numpy==1.24.4
+numpy==1.17
 pillow==10.2.0
 protobuf==4.25.3
 pydub==0.25.1
