@@ -3,6 +3,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import einsum, nn
+# from mamba_block import MambaBlock
 
 
 # --- Helper Utils ---
@@ -164,6 +165,8 @@ class TFilm(nn.Module):
         self.block_num = block_num
         self.num_layers = 8 # default = 2
         self.lstm = nn.LSTM(input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
+        # todo: Mamba block initialization
+        # self.mamba = MambaBlock(in_channels=input_channels, n_layer=1, bidirectional=True)
         self.output_dim = output_dim
         self.layer = nn.Linear(output_dim, output_dim*2)
 
@@ -361,11 +364,11 @@ class UNet(nn.Module):
         print("Model initializing... This can take a few minutes.")
 
         # Hyperparameter Settings
-        sequential = params['sequential']
-        assert sequential in ['lstm', 'attn', None], "Choose sequential between \'lstm\' or \'attn\', None."
+        sequential = params['sequential'] # todo: add here Mamba
+        assert sequential in ['lstm', 'attn', None], "Choose sequential between \'lstm\' or \'attn\', None." # todo: add here Mamba
 
         dims = params['dims']
-        factors =params['factors']
+        factors = params['factors']
         assert len(dims)-1 == len(factors)
         
         block_nums = params['block_nums']
@@ -403,9 +406,11 @@ class UNet(nn.Module):
                     nn.SiLU(),
                     nn.Linear(self.mid_dim, self.mid_dim)
                 )
-            
             if sequential == 'attn':
                 self.mid_attn = Residual(PreNorm(self.mid_dim, Attention(self.mid_dim)))
+            # todo: implement Mamba case
+            if sequential == 'mamba':
+                pass
                 
         # Classifier-free guidance
         self.cond_drop_prob = cond_drop_prob
@@ -471,6 +476,21 @@ class UNet(nn.Module):
             
             if self.sequential == 'attn':
                 x = self.mid_attn(x)
+
+            # todo: implement Mamba case
+            if self.sequential == 'mamba':
+                pass
+                # from SPMamba: https://github.com/JusperLee/SPMamba/blob/main/TFGNet_mamba.py#L558
+                # self.intra_mamba = MambaBlock(in_channels, 1, True)
+                # # self.intra_rnn = nn.LSTM(
+                # #     in_channels, hidden_channels, 1, batch_first=True, bidirectional=True
+                # # )
+
+                # from up here
+                # self.lstm = nn.LSTM(
+                #       input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
+                # new code
+                # x = self.mamba(x)
         
             x = x + downsampled[-1] # residual connection
         
