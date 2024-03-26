@@ -1,9 +1,7 @@
 #!/bin/bash
-
 # Base directories
 BASE_DIR_DEV="./DCASE_2023_Challenge_Task_7_Dataset/dev"
 BASE_DIR_EVAL="./DCASE_2023_Challenge_Task_7_Dataset/eval"
-
 # Function to rename directories
 rename_dirs() {
     local base_dir=$1
@@ -15,9 +13,7 @@ rename_dirs() {
     mv "${base_dir}/rain" "${base_dir}/Rain"
     mv "${base_dir}/sneeze_cough" "${base_dir}/Sneeze_Cough"
 }
-
 # Rename directories in both dev and eval
 rename_dirs "$BASE_DIR_DEV"
 rename_dirs "$BASE_DIR_EVAL"
-
 echo "Directories have been renamed in both dev and eval."
