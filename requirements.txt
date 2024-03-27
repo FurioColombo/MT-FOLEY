@@ -17,4 +17,8 @@ tqdm==4.66.2
 typing_extensions==4.10.0
 urllib3==2.2.1
 mamba==0.11.3
+
+# Common utils
 torch-summary==1.4.5
+gpustat==1.1.1
+tmuxp==1.45.0

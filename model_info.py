@@ -13,6 +13,8 @@ from scipy.io.wavfile import write
 from sde import VpSdeCos
 from utils import (adjust_audio_length, get_event_cond, high_pass_filter,
                    normalize, pooling, resample_audio)
+from torchsummary import summary
+
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -98,7 +100,9 @@ def main(args):
     audio_length = sample_rate * 4
     model = UNet(len(LABELS), params).to(device)
     model = load_ema_weights(model, args.model_path)
-
+    summary(model)
+    print(model)
+    print('========================= END =========================')
 
 
 if __name__ == '__main__':

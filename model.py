@@ -190,6 +190,7 @@ class TFilm(nn.Module):
         x = pooling(x.unsqueeze(1)).squeeze(1)
         h0 = torch.randn(self.num_layers, x.shape[0], self.output_dim, device=x.device)
         c0 = torch.randn(self.num_layers, x.shape[0], self.output_dim, device=x.device)
+        # todo: mamba layer
         x, _ = self.lstm(x.unsqueeze(-1), (h0, c0))
         x = self.layer(x)
         x = x.permute(0, 2, 1)

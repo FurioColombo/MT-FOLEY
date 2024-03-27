@@ -4,7 +4,7 @@ params = {
     'train_dirs': ['./DCASE_2023_Challenge_Task_7_Dataset/train.txt'],
     'test_dirs': ['./DCASE_2023_Challenge_Task_7_Dataset/eval.txt'],
     'sample_rate': 22050,
-    'audio_length': 88200,  # traning data seconds * sample_rate
+    'audio_length': 88200,  # training data seconds * sample_rate
     'num_workers': 4,
     
     # --- Model ---
@@ -25,7 +25,7 @@ params = {
     
     # --- Training ---
     'lr':                          1e-4,
-    'batch_size':                  16,
+    'batch_size':                  8,
     'ema_rate':                    0.999,
     'scheduler_patience_epoch':    25,
     'scheduler_factor':            0.8,
