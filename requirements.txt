@@ -16,7 +16,7 @@ tensorboard==2.14.0
 tqdm==4.66.2
 typing_extensions==4.10.0
 urllib3==2.2.1
-mamba==0.11.3
+mamba-ssm==1.2.0
 
 # Common utils
 torch-summary==1.4.5

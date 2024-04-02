@@ -67,8 +67,8 @@ class Learner:
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
         self.sum_loss_in_bins_test = np.zeros(self.n_bins)
         self.cum_grad_norms = 0
-        
-        
+
+
     # Train
     def train(self):
         device = next(self.model.parameters()).device
@@ -83,8 +83,7 @@ class Learner:
                 self.model.train()
                 features = _nested_map(
                     features,
-                    lambda x: x.to(device) if isinstance(
-                        x, torch.Tensor) else x,
+                    lambda x: x.to(device) if isinstance(x, torch.Tensor) else x,
                 )
                 loss = self.train_step(features)
                 if torch.isnan(loss).any():
@@ -104,7 +103,7 @@ class Learner:
             
             # Logging by epochs
             if self.is_master:
-                if self.epoch % self.params['num_epochs_to_save'] == 0:
+                if self.epoch > 0 and self.epoch % self.params['num_epochs_to_save'] == 0:
                     self._write_inference_summary(self.step, device)
                     self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
                 self.epoch += 1
@@ -137,6 +136,9 @@ class Learner:
         t_detach = np.reshape(t_detach, -1)
 
         vectorial_loss = self.v_loss(noise, predicted).detach()
+        # todo: check this is not slow
+        # vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
+        # vectorial_loss = torch.reshape(vectorial_loss, (-1,))
         vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
         vectorial_loss = np.reshape(vectorial_loss, -1)
 
@@ -145,36 +147,37 @@ class Learner:
         return loss
     
     
+    @torch.no_grad()
     # Test
     def test_set_evaluation(self):
-        with torch.no_grad():
-            self.model.eval()
-            for features in self.test_set:
-                audio = features["audio"].cuda()
-                classes = features["class"].cuda()
-                events = features["event"].cuda()
+        self.model.eval()
+        for features in self.test_set:
+            audio = features["audio"].cuda()
+            classes = features["class"].cuda()
+            events = features["event"].cuda()
 
-                N, T = audio.shape
+            N, T = audio.shape
 
-                t = torch.rand(N, 1, device=audio.device)
-                t = (self.sde.t_max - self.sde.t_min) * t + self.sde.t_min
-                noise = torch.randn_like(audio)
-                noisy_audio = self.sde.perturb(audio, t, noise)
-                sigma = self.sde.sigma(t)
-                predicted = self.model(noisy_audio, sigma, classes, events)
+            t = torch.rand(N, 1, device=audio.device)
+            t = (self.sde.t_max - self.sde.t_min) * t + self.sde.t_min
+            noise = torch.randn_like(audio)
+            noisy_audio = self.sde.perturb(audio, t, noise)
+            sigma = self.sde.sigma(t)
+            predicted = self.model(noisy_audio, sigma, classes, events)
 
-                vectorial_loss = self.v_loss(noise, predicted).detach()
+            vectorial_loss = self.v_loss(noise, predicted).detach()
+            # todo: suspicious detach() cpu() numpy()
+            vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
+            vectorial_loss = np.reshape(vectorial_loss, -1)
+            t = t.cpu().numpy()
+            t = np.reshape(t, -1)
+            self.update_conditioned_loss(
+                vectorial_loss, t, False)
 
-                vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
-                vectorial_loss = np.reshape(vectorial_loss, -1)
-                t = t.cpu().numpy()
-                t = np.reshape(t, -1)
-                self.update_conditioned_loss(
-                    vectorial_loss, t, False)
-                
     
     # Update loss & ema weights
     def update_conditioned_loss(self, vectorial_loss, continuous_array, isTrain):
+        # todo: continuous_array = torch.trunc(self.n_bins * continuous_array)
         continuous_array = np.trunc(self.n_bins * continuous_array)
         continuous_array = continuous_array.astype(int)
         if isTrain:
@@ -208,8 +211,7 @@ class Learner:
         writer = self.summary_writer or SummaryWriter(
             self.model_dir, purge_step=step)
 
-        writer.add_scalar('train/sum_loss_on_n_steps',
-                          sum_loss_n_steps, step)
+        writer.add_scalar('train/sum_loss_on_n_steps', sum_loss_n_steps, step)
         writer.add_scalar("train/mean_grad_norm", mean_grad_norms, step)
         writer.add_scalars("train/conditioned_loss", dic_loss_train, step)
         writer.add_scalar("train/learning_rate", self.optimizer.param_groups[0]['lr'], step)
@@ -234,7 +236,7 @@ class Learner:
         self.summary_writer = writer
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
         self.sum_loss_in_bins_test = np.zeros(self.n_bins)
-        
+
     def _write_inference_summary(self, step, device, cond_scale=3.):
         sde = SubVpSdeCos()
         sampler = SDESampling(self.model, sde)
@@ -317,6 +319,7 @@ class Learner:
     def save_to_checkpoint(self, filename="weights"):
         save_basename = f"{filename}_step-{self.step}.pt"
         save_name = f"{self.model_dir}/{save_basename}"
+        print("saving model to:", save_name)
         torch.save(self.state_dict(), save_name)
 
 
@@ -333,11 +336,16 @@ def _train_impl(replica_id, model, train_set, test_set, params, distributed=Fals
 
 def train(params):
     model = UNet(num_classes=len(LABELS), params=params).cuda()
-    train_set = dataset_from_path(params['train_dirs'], params, LABELS)
-    test_set = dataset_from_path(params['test_dirs'], params, LABELS)
+    train_set = dataset_from_path(params['train_dirs'], params, LABELS, cond_dirs=params['train_cond_dirs'])
+    test_set = dataset_from_path(params['test_dirs'], params, LABELS, cond_dirs=params['test_cond_dirs'])
 
-    _train_impl(0, model, train_set, test_set, params)
-
+    _train_impl(
+        replica_id=0,
+        model=model,
+        train_set=train_set,
+        test_set=test_set,
+        params=params
+    )
 
 def train_distributed(replica_id, replica_count, port, params):
     print(f"Replica {replica_id} of {replica_count} started")
@@ -350,8 +358,8 @@ def train_distributed(replica_id, replica_count, port, params):
     torch.cuda.set_device(device)
 
     model = UNet(num_classes=len(LABELS), params=params).cuda()
-    train_set = dataset_from_path(params['train_dirs'], params, LABELS, distributed=True)
-    test_set = dataset_from_path(params['test_dirs'], params, LABELS)
+    train_set = dataset_from_path(params['train_dirs'], params, LABELS, distributed=True, cond_dirs=params['train_cond_dirs'])
+    test_set = dataset_from_path(params['test_dirs'], params, LABELS, distributed=True, cond_dirs=params['test_cond_dirs'])
     model = DistributedDataParallel(model, device_ids=[replica_id], find_unused_parameters=True)
 
     _train_impl(replica_id, model, train_set, test_set, params, distributed=True)

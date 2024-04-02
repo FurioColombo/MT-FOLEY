@@ -2,6 +2,10 @@ from functools import partial
 from mamba_ssm.modules.mamba_simple import Mamba, Block
 from mamba_ssm.models.mixer_seq_simple import _init_weights
 from mamba_ssm.ops.triton.layernorm import RMSNorm
+import torch
+from torch import nn
+
+
 
 
 class MambaBlock(nn.Module):
