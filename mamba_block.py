@@ -6,8 +6,6 @@ import torch
 from torch import nn
 
 
-
-
 class MambaBlock(nn.Module):
     def __init__(self, in_channels, n_layer=1, bidirectional=False):
         super(MambaBlock, self).__init__()

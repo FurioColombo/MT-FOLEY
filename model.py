@@ -450,6 +450,11 @@ class UNet(nn.Module):
             # todo: implement Mamba case
             if sequential == 'mamba':
                 self.bottleneck_mamba = MambaBlock(in_channels=self.mid_dim, n_layer=1, bidirectional=True)
+                self.lstm_mlp = nn.Sequential(
+                    nn.Linear(self.mid_dim * 2, self.mid_dim),
+                    nn.SiLU(),
+                    nn.Linear(self.mid_dim, self.mid_dim)
+                )
 
         # Classifier-free guidance
         self.cond_drop_prob = cond_drop_prob
@@ -529,6 +534,8 @@ class UNet(nn.Module):
                 # new code
                 x = x.transpose(1,2)
                 x = self.bottleneck_mamba(x)
+                x = self.lstm_mlp(x)
+                x = x.permute(0,2,1)
 
             x = x + downsampled[-1]  # residual connection
 
