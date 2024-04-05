@@ -79,6 +79,13 @@ To train the T-Foley model, follow these steps:
     
     If you use other dataset, prepare file path list of your training data as .txt format and configure to `params.py`.
 
+(optional - not recommended)
+   If you wish to load the conditioning from file instead of computing it on the go:
+   - Run:
+   ```bash
+   $ python create_cond_dataset.py
+   ``` 
+   - uncomment `params.py` `'train_cond_dirs'` and `'train_cond_dirs'` fields.
 
 2. Run the training:
     ```bash
