@@ -17,6 +17,7 @@ tqdm==4.66.2
 typing_extensions==4.10.0
 urllib3==2.2.1
 mamba-ssm==1.2.0
+triton==2.1.0
 
 # Common utils
 torch-summary==1.4.5

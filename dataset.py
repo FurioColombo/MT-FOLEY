@@ -113,7 +113,6 @@ def from_path(data_dirs, params, labels, distributed=False, cond_dirs=None):
     if cond_dirs is None:
         dataset = AudioDataset(data_dirs, params, labels)
     else:
-        print('Conditioning is being loaded from file!')
         dataset = CondAudioDataset(
             audio_paths=data_dirs,
             cond_paths=cond_dirs,
@@ -127,7 +126,7 @@ def from_path(data_dirs, params, labels, distributed=False, cond_dirs=None):
             batch_size=params['batch_size'],
             collate_fn=None,
             shuffle=False,
-            num_workers=params['num_workers'],
+            num_workers=params['n_workers'],
             pin_memory=True,
             drop_last=True,
             sampler=DistributedSampler(dataset)

@@ -14,7 +14,7 @@ from dataset import from_path as dataset_from_path
 from model import UNet
 from sampler import SDESampling
 from sde import SubVpSdeCos
-from utils import get_event_cond, high_pass_filter, normalize, plot_env
+from utils import get_event_cond, high_pass_filter, normalize, plot_env, check_nan
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -49,11 +49,12 @@ class Learner:
         self.train_set = train_set
         self.test_set = test_set
         self.params = params
-        
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
+
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=5.4723e-6) # todo: loading lr from params doesn't work
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, factor=params['scheduler_factor'], 
-            patience=params['scheduler_patience_epoch']*len(self.train_set)//params['num_steps_to_test'], 
+            self.optimizer,
+            factor=params['scheduler_factor'],
+            patience=params['scheduler_patience_epoch'] * len(self.train_set) // params['n_steps_to_test'],
             threshold=params['scheduler_threshold']
         )
         self.params['total_params_num'] = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -67,12 +68,13 @@ class Learner:
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
         self.sum_loss_in_bins_test = np.zeros(self.n_bins)
         self.cum_grad_norms = 0
-
+        self.valid_loss = float(0)
+        self.best_valid_loss = float(100)
 
     # Train
     def train(self):
         device = next(self.model.parameters()).device
-        while True:
+        while self.epoch <= self.params['n_epochs']:
             if self.distributed: self.train_set.sampler.set_epoch(self.epoch)
             for features in (
                 tqdm(self.train_set,
@@ -86,25 +88,34 @@ class Learner:
                     lambda x: x.to(device) if isinstance(x, torch.Tensor) else x,
                 )
                 loss = self.train_step(features)
-                if torch.isnan(loss).any():
-                    raise RuntimeError(
-                        f"Detected NaN loss at step {self.step}.")
+                check_nan(t=loss, error_msg=f"Detected NaN loss at step {self.step}.")
                     
-                # Logging by steps
+                # Logging by steps | train losses, etc
                 if self.is_master:
-                    if self.step % 250 == 249:
-                        self._write_summary(self.step)
-                        
-                    if self.step % self.params['num_steps_to_test'] == 0:
+                    if self.step % self.params['n_steps_to_log'] == self.params['n_steps_to_log'] - 1:
+                        self._write_train_summary(self.step)
+                        self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+
+                    # Validation loss
+                    if self.step % self.params['n_steps_to_test'] == 0:
                         self.test_set_evaluation()
-                        self.scheduler.step(sum(self.sum_loss_in_bins_test)/sum(self.num_elems_in_bins_test))
+                        self.valid_loss = sum(self.sum_loss_in_bins_test) / sum(self.num_elems_in_bins_test)
+                        if self.valid_loss < self.best_valid_loss:
+                            self.best_valid_loss = self.valid_loss
+                            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+                        self.scheduler.step(self.valid_loss)
                         self._write_test_summary(self.step)
                 self.step += 1
             
-            # Logging by epochs
+            # End of epoch stuff
             if self.is_master:
-                if self.epoch > 0 and self.epoch % self.params['num_epochs_to_save'] == 0:
+                # if self.epoch > 0:
+                if self.epoch % self.params['n_epochs_to_log'] == 0:
+                    # Summary writer full inference
                     self._write_inference_summary(self.step, device)
+
+                # Save best model's checkpoints
+                if self.epoch % self.params['n_epochs_to_checkpoint'] == self.params['n_epochs_to_checkpoint'] - 1:
                     self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
                 self.epoch += 1
 
@@ -136,9 +147,6 @@ class Learner:
         t_detach = np.reshape(t_detach, -1)
 
         vectorial_loss = self.v_loss(noise, predicted).detach()
-        # todo: check this is not slow
-        # vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
-        # vectorial_loss = torch.reshape(vectorial_loss, (-1,))
         vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
         vectorial_loss = np.reshape(vectorial_loss, -1)
 
@@ -166,38 +174,33 @@ class Learner:
             predicted = self.model(noisy_audio, sigma, classes, events)
 
             vectorial_loss = self.v_loss(noise, predicted).detach()
-            # todo: suspicious detach() cpu() numpy()
+
             vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
             vectorial_loss = np.reshape(vectorial_loss, -1)
             t = t.cpu().numpy()
             t = np.reshape(t, -1)
-            self.update_conditioned_loss(
-                vectorial_loss, t, False)
+            self.update_conditioned_loss(vectorial_loss, t, False)
 
-    
     # Update loss & ema weights
-    def update_conditioned_loss(self, vectorial_loss, continuous_array, isTrain):
-        # todo: continuous_array = torch.trunc(self.n_bins * continuous_array)
+    def update_conditioned_loss(self, vectorial_loss, continuous_array, is_train):
         continuous_array = np.trunc(self.n_bins * continuous_array)
         continuous_array = continuous_array.astype(int)
-        if isTrain:
+        if is_train:
             for k in range(len(continuous_array)):
                 self.num_elems_in_bins_train[continuous_array[k]] += 1
-                self.sum_loss_in_bins_train[continuous_array[k]
-                                            ] += vectorial_loss[k]
+                self.sum_loss_in_bins_train[continuous_array[k]] += vectorial_loss[k]
         else:
             for k in range(len(continuous_array)):
                 self.num_elems_in_bins_test[continuous_array[k]] += 1
-                self.sum_loss_in_bins_test[continuous_array[k]
-                                           ] += vectorial_loss[k]
+                self.sum_loss_in_bins_test[continuous_array[k]] += vectorial_loss[k]
 
     def update_ema_weights(self):
         for ema_param, param in zip(self.ema_weights, self.model.parameters()):
             if param.requires_grad:
                 ema_param -= (1 - self.ema_rate) * (ema_param - param.detach())
     
-    # Logging stuff  
-    def _write_summary(self, step):
+    # Logging train stuff
+    def _write_train_summary(self, step):
         loss_in_bins_train = np.divide(
             self.sum_loss_in_bins_train, self.num_elems_in_bins_train
         )
@@ -207,7 +210,7 @@ class Learner:
 
         sum_loss_n_steps = np.sum(self.sum_loss_in_bins_train)
         mean_grad_norms = self.cum_grad_norms / self.num_elems_in_bins_train.sum() * \
-            self.params['batch_size']
+                          self.params['batch_size']
         writer = self.summary_writer or SummaryWriter(
             self.model_dir, purge_step=step)
 
@@ -232,6 +235,10 @@ class Learner:
         writer = self.summary_writer or SummaryWriter(
             self.model_dir, purge_step=step)
         writer.add_scalars("test/conditioned_loss", dic_loss_test, step)
+        writer.add_scalar("test/sum_loss_on_n_steps", np.sum(self.sum_loss_in_bins_test), step)
+        writer.add_scalar("test/val_loss", self.valid_loss, step)
+        writer.add_scalar("test/best_val_loss", self.best_valid_loss, step)
+
         writer.flush()
         self.summary_writer = writer
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
@@ -248,6 +255,7 @@ class Learner:
         writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
         writer.add_audio(f"test_sample/audio", test_feature["audio"], step, sample_rate=22050)
         writer.add_image(f"test_sample/envelope", plot_env(test_feature["audio"]), step, dataformats='HWC')
+
         
         for class_idx in range(len(LABELS)):
             noise = torch.randn(1, self.params['audio_length'], device=device)
@@ -266,11 +274,11 @@ class Learner:
         event_loss = sum(event_loss) / len(event_loss)
         writer.add_scalar(f"test/event_loss", event_loss, step)
         writer.flush()
-    
-    # Utils    
+
+    # Utils
     def get_random_test_feature(self):
         return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]
-        
+
     def log_params(self):
         with open(os.path.join(self.model_dir, 'params.json'), 'w') as fp:
             json.dump(self.params, fp, indent=4)
@@ -322,7 +330,6 @@ class Learner:
         print("saving model to:", save_name)
         torch.save(self.state_dict(), save_name)
 
-
 # --- Training functions ---
 def _train_impl(replica_id, model, train_set, test_set, params, distributed=False):
     torch.backends.cudnn.benchmark = True
@@ -358,8 +365,9 @@ def train_distributed(replica_id, replica_count, port, params):
     torch.cuda.set_device(device)
 
     model = UNet(num_classes=len(LABELS), params=params).cuda()
+
     train_set = dataset_from_path(params['train_dirs'], params, LABELS, distributed=True, cond_dirs=params['train_cond_dirs'])
     test_set = dataset_from_path(params['test_dirs'], params, LABELS, distributed=True, cond_dirs=params['test_cond_dirs'])
-    model = DistributedDataParallel(model, device_ids=[replica_id], find_unused_parameters=True)
+    model = DistributedDataParallel(model, device_ids=[replica_id], find_unused_parameters=True) # todo: t-foley implementation uses find_unused_parameters=False
 
     _train_impl(replica_id, model, train_set, test_set, params, distributed=True)
