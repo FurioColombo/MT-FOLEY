@@ -110,3 +110,7 @@ def plot_env(waveform):
     data = save_figure_to_numpy(fig)
     plt.close()
     return data
+
+def check_nan(t:torch.Tensor, error_msg:str):
+    if torch.isnan(t).any():
+        raise RuntimeError(error_msg)

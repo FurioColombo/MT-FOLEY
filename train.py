@@ -1,10 +1,10 @@
+import os
+from params import params
+# os.environ["CUDA_VISIBLE_DEVICES"] = params["CUDA_VISIBLE_DEVICES"]
 
 from torch.cuda import device_count
 from torch.multiprocessing import spawn
-
 from learner import train, train_distributed
-from params import params
-
 
 def _get_free_port():
     import socketserver
@@ -12,8 +12,18 @@ def _get_free_port():
     with socketserver.TCPServer(("localhost", 0), None) as s:
         return s.server_address[1]
 
+def check_model_params():
+    # DATASET
+    if params['train_cond_dirs'] is not None:
+        print('Conditioning will be loaded from file!')
+
+    # GPUs
+    print("Cuda GPUs codes set to be used:", params["CUDA_VISIBLE_DEVICES"])
+
 def main():
+    check_model_params()
     replica_count = device_count()
+
     if replica_count > 1:
         if params['batch_size'] % replica_count != 0:
             raise ValueError(
@@ -27,6 +37,7 @@ def main():
             nprocs=replica_count,
             join=True,
         )
+
     else:
         train(params)
 

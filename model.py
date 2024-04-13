@@ -3,10 +3,7 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import einsum, nn
-
-
-# todo: import mamba block
-# from mamba_block import MambaBlock
+from mamba_block import MambaBlock
 
 
 # --- Helper Utils ---
@@ -35,10 +32,15 @@ class LayerNorm(nn.Module):
         self.g = nn.Parameter(torch.ones(1, dim, 1))
 
     def forward(self, x):
+        @torch.jit.script
+        def normalize(x1, m, v, e, g):
+            return (x1 - m) * (v + e).rsqrt() * g
+
         eps = 1e-5 if x.dtype == torch.float32 else 1e-3
         var = torch.var(x, dim=1, unbiased=False, keepdim=True)
         mean = torch.mean(x, dim=1, keepdim=True)
-        return (x - mean) * (var + eps).rsqrt() * self.g
+        # return (x - mean) * (var + eps).rsqrt() * self.g
+        return self.normalize(x, mean, var, eps, self.g)
 
 
 class PreNorm(nn.Module):
@@ -127,9 +129,14 @@ class RFF_MLP_Block(nn.Module):
           table:
               (shape: [B, 64], dtype: float32)
         """
+        @torch.jit.script
+        def compute_table(s, f):
+            return 2 * np.pi * s * f
+
         freqs = self.RFF_freq
         freqs = freqs.to(device=torch.device("cuda"))
-        table = 2 * np.pi * sigma * freqs
+        # table = 2 * np.pi * sigma * freqs
+        table = compute_table(sigma, freqs)
         table = torch.cat([torch.sin(table), torch.cos(table)], dim=1)
         return table
 
@@ -190,6 +197,7 @@ class TFilm(nn.Module):
         x = pooling(x.unsqueeze(1)).squeeze(1)
         h0 = torch.randn(self.num_layers, x.shape[0], self.output_dim, device=x.device)
         c0 = torch.randn(self.num_layers, x.shape[0], self.output_dim, device=x.device)
+        # todo: mamba layer
         x, _ = self.lstm(x.unsqueeze(-1), (h0, c0))
         x = self.layer(x)
         x = x.permute(0, 2, 1)
@@ -266,8 +274,13 @@ class FilmConvBlock(nn.Module):
             self.conv = Conv1d(out_channel, out_channel, 3, stride=factor, padding=1)
 
     def forward(self, x, gamma, beta):
+        @torch.jit.script
+        def compute_film(g, x1, b):
+            return g * x1 + b
+
         x = self.proj(x)
-        x = gamma * x + beta
+        # x = gamma * x + beta
+        x = compute_film(gamma, x, beta)
 
         x = self.norm(x)
         x = self.act(x)
@@ -299,7 +312,6 @@ class TFilmConvBlock(nn.Module):
 
         x = self.conv(x)
         return x
-
 
 class BFilmConvBlock(nn.Module):
     '''FiLM + Activation + Conv'''
@@ -390,9 +402,9 @@ class UNet(nn.Module):
         print("Model initializing... This can take a few minutes.")
 
         # Hyperparameter Settings
-        sequential = params['sequential']  # todo: add here Mamba
-        assert sequential in ['lstm', 'attn',
-                              None], "Choose sequential between \'lstm\' or \'attn\', None."  # todo: add here Mamba
+        sequential = params['sequential']
+        assert sequential in ['lstm', 'attn', 'mamba',
+                              None], "Choose sequential between \'lstm\' or \'attn\' or \'mamba\', None."
 
         dims = params['dims']
         factors = params['factors']
@@ -427,17 +439,22 @@ class UNet(nn.Module):
         if sequential:
             self.mid_dim = params['mid_dim']
             if sequential == 'lstm':
-                self.lstm = nn.LSTM(self.mid_dim, self.mid_dim, num_layers=2, batch_first=True, bidirectional=True)
+                self.lstm = nn.LSTM(input_size=self.mid_dim, hidden_size=self.mid_dim, num_layers=2, batch_first=True, bidirectional=True)
                 self.lstm_mlp = nn.Sequential(
                     nn.Linear(self.mid_dim * 2, self.mid_dim),
                     nn.SiLU(),
                     nn.Linear(self.mid_dim, self.mid_dim)
                 )
-            if sequential == 'attn':
+            if sequential == 'attn' or sequential == 'attention':
                 self.mid_attn = Residual(PreNorm(self.mid_dim, Attention(self.mid_dim)))
             # todo: implement Mamba case
             if sequential == 'mamba':
-                pass
+                self.bottleneck_mamba = MambaBlock(in_channels=self.mid_dim, n_layer=1, bidirectional=True)
+                self.lstm_mlp = nn.Sequential(
+                    nn.Linear(self.mid_dim * 2, self.mid_dim),
+                    nn.SiLU(),
+                    nn.Linear(self.mid_dim, self.mid_dim)
+                )
 
         # Classifier-free guidance
         self.cond_drop_prob = cond_drop_prob
@@ -506,18 +523,19 @@ class UNet(nn.Module):
 
             # todo: implement Mamba case
             if self.sequential == 'mamba':
-                pass
                 # from SPMamba: https://github.com/JusperLee/SPMamba/blob/main/TFGNet_mamba.py#L558
                 # self.intra_mamba = MambaBlock(in_channels, 1, True)
                 # # self.intra_rnn = nn.LSTM(
-                # #     in_channels, hidden_channels, 1, batch_first=True, bidirectional=True
+                # #     in_channels, hidden_channels, num_layers=1, batch_first=True, bidirectional=True
                 # # )
-
                 # from up here
                 # self.lstm = nn.LSTM(
                 #       input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
                 # new code
-                # x = self.mamba(x)
+                x = x.transpose(1,2)
+                x = self.bottleneck_mamba(x)
+                x = self.lstm_mlp(x)
+                x = x.permute(0,2,1)
 
             x = x + downsampled[-1]  # residual connection
 

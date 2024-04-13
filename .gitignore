@@ -4,3 +4,7 @@ pretrained/
 results/
 DCASE_2023_Challenge_Task_7_Dataset/
 .idea
+logs_tfoley_lstm/
+logs_tfoley_lstm_og/
+logs_tfoley_mamba/
+retrained_tfoley_results/

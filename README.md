@@ -20,14 +20,14 @@ To get started, please prepare the codes and python environment.
 1. Clone this repository:
     ```bash
     $ git clone https://github.com/YoonjinXD/T-foley.git
-    $ cd ./T-foley
+    $ cd ./MT-FOLEY
     ```
 
 2. Install the required dependencies by running the following command:
     ```bash
     # (Optional) Create a conda virtual emvironment
-    $ conda create -n tfoley python=3.8.0
-    $ conda activate tfoley
+    $ conda create -n env-mt-foley python=3.8.0
+    $ conda activate env-mt-foley
     # Install dependency with pip. Choose appropriate cuda version
     $ pip install torch==2.2.0 torchvision==0.17.0 torchaudio==2.2.0 --index-url https://download.pytorch.org/whl/cu118
     $ pip install -r requirements.txt
@@ -79,6 +79,13 @@ To train the T-Foley model, follow these steps:
     
     If you use other dataset, prepare file path list of your training data as .txt format and configure to `params.py`.
 
+(optional - not recommended)
+   If you wish to load the conditioning from file instead of computing it on the go:
+   - Run:
+   ```bash
+   $ python create_cond_dataset.py
+   ``` 
+   - uncomment `params.py` `'train_cond_dirs'` and `'train_cond_dirs'` fields.
 
 2. Run the training:
     ```bash
