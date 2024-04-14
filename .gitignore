@@ -8,3 +8,9 @@ logs_tfoley_lstm/
 logs_tfoley_lstm_og/
 logs_tfoley_mamba/
 retrained_tfoley_results/
+checkpoints_results/
+checkpoints_res_test_mamba/
+res_audio_checkpoints_lstm_og/
+
+.wav
+.pt
