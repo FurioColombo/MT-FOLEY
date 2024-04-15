@@ -1,5 +1,7 @@
+from pathlib import Path
 import argparse
 import json
+import sys
 import os
 
 import numpy as np
@@ -9,6 +11,7 @@ import pydub
 import soundfile as sf
 from scipy.io.wavfile import write
 
+sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from model.model import UNet
 from model.sampler import SDESampling_batch
 from model.sde import VpSdeCos
