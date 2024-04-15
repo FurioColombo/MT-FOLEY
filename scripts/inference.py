@@ -12,10 +12,10 @@ import soundfile as sf
 from scipy.io.wavfile import write
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
-from model.model import UNet
+from model.tfmodel import UNet
 from model.sampler import SDESampling_batch
 from model.sde import VpSdeCos
-from utils.utils import (adjust_audio_length, get_event_cond, high_pass_filter,
+from utils.utilities import (adjust_audio_length, get_event_cond, high_pass_filter,
                    normalize, resample_audio)
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']

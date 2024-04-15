@@ -1,6 +1,6 @@
+from pathlib import Path
 import argparse
 import os.path
-from pathlib import Path
 import sys
 
 import torch
@@ -20,7 +20,12 @@ def main(args):
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Set models
-    checkpoints_paths = list_checkpoint_paths_in_dir(os.path.abspath(args.checkpoints_folder_path))
+    if os.path.isfile(args.checkpoints_path):
+        checkpoints_paths = [os.path.abspath(args.checkpoints_path)]
+    elif os.path.isdir(args.checkpoints_path):
+        checkpoints_paths = list_checkpoint_paths_in_dir(os.path.abspath(args.checkpoints_path))
+    else:
+        raise IsADirectoryError(f'checkpoint path {args.checkpoints_path} is invalid')
 
     # Set sampler
     tAudio.set_audio_backend('sox_io')
@@ -45,7 +50,7 @@ def validate_args(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoints_folder_path', '-c', type=str, required=True, help="Path to the folder containing model checkpoints.")
+    parser.add_argument('--checkpoints_path', '-c', type=str, required=True, help="Path to the folder containing model checkpoints.")
     parser.add_argument('--param_path', '-p', type=str, default='./pretrained/params.json')
     parser.add_argument('--target_audio_path', type=str, help='Path to the target audio file.', default=None)
     parser.add_argument('--gen_all_classes', '-a', type=bool, help='Generate audio samples from all classes', default=True)

@@ -1,3 +1,4 @@
+import os.path
 from pathlib import Path
 
 import random
@@ -5,10 +6,10 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-from utils import plot_env, normalize, high_pass_filter, get_event_cond
+from utils.utils import plot_env, normalize, high_pass_filter, get_event_cond
 
 
-class CheckPointEvaluator:
+class CheckpointEvaluator:
 
     def __init__(self, test_set, labels:list, audio_length: int, device, writer_dir:str or Path, sampler=None, event_type='rms'):
         self.test_set = test_set
@@ -16,7 +17,7 @@ class CheckPointEvaluator:
         self.loss_fn = nn.MSELoss()
         self.summary_writer = None
         self.audio_length = audio_length
-        self.writer_dir = writer_dir
+        self.writer_dir = os.path.abspath(writer_dir)
         self.sampler=sampler
         self.device = device
         self.event_type = event_type
@@ -31,7 +32,7 @@ class CheckPointEvaluator:
         test_event = test_feature["event"].unsqueeze(0).to(self.device)
 
         # Summary Writer
-        writer = self.summary_writer or SummaryWriter(self.writer_dir, purge_step=step)
+        writer = self.summary_writer or SummaryWriter(self.writer_dir, purge_step=int(step))
         writer.add_audio(f"test_sample/audio", test_feature["audio"], step, sample_rate=22050)
         writer.add_image(f"test_sample/envelope", plot_env(test_feature["audio"]), step, dataformats='HWC')
 
@@ -41,8 +42,12 @@ class CheckPointEvaluator:
             classes = torch.tensor([class_idx], device=self.device)
 
             sample = sampler.predict(noise, 100, classes, test_event, cond_scale=cond_scale)
-            sample = sample.flatten().cpu()
+            if torch.isnan(sample).any():
+                print(f'WARNING: NaN detected at step {step} - class: {self.labels[class_idx]} | SKIPPED LOGS FOR THIS ONE!')
 
+                continue
+
+            sample = sample.flatten().cpu()
             sample = normalize(sample)
             sample = high_pass_filter(sample, sr=22050)
 
@@ -50,7 +55,8 @@ class CheckPointEvaluator:
             writer.add_audio(f"{self.labels[class_idx]}/audio", sample, step, sample_rate=22050)
             writer.add_image(f"{self.labels[class_idx]}/envelope", plot_env(sample), step, dataformats='HWC')
 
-        event_loss = sum(event_loss) / len(event_loss)
+
+        event_loss = sum(event_loss) / len(event_loss) if len(event_loss) > 0 else 100
         writer.add_scalar(f"test/event_loss", event_loss, step)
         writer.flush()
 

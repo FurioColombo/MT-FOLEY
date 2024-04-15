@@ -11,10 +11,10 @@ import soundfile as sf
 from scipy.io.wavfile import write
 from tqdm import tqdm
 
-from model.model import UNet
+from model.tfmodel import UNet
 from model.sampler import SDESampling_batch
 from model.sde import VpSdeCos
-from utils.utils import adjust_audio_length, get_event_cond, high_pass_filter, normalize, resample_audio
+from utils.utilities import adjust_audio_length, get_event_cond, high_pass_filter, normalize, resample_audio
 
 
 def load_ema_weights(model, model_path):

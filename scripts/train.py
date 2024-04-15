@@ -1,10 +1,11 @@
 import os
-from params import params
 # os.environ["CUDA_VISIBLE_DEVICES"] = params["CUDA_VISIBLE_DEVICES"]
 
 from torch.cuda import device_count
 from torch.multiprocessing import spawn
-from train.learner import train, train_distributed
+
+from params.params import params
+from learner import train, train_distributed
 
 def _get_free_port():
     import socketserver

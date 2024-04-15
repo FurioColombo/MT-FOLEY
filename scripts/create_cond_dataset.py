@@ -1,12 +1,15 @@
 import torch
 import torchaudio
+
 from pathlib import Path
 from tqdm import tqdm
+import sys
 import os
 
+sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from data.dataset import parse_filelist
 from params.params import params
-from utils.utils import get_event_cond
+from utils.utilities import get_event_cond
 
 
 def create_cond_files_from_txt(paths_files):

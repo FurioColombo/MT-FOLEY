@@ -7,10 +7,9 @@ import pydub
 import soundfile as sf
 from torchsummary import summary
 
-from model.model import UNet
+from model.tfmodel import UNet
 from scipy.io.wavfile import write
-from utils.utils import (get_event_cond, high_pass_filter, normalize)
-
+from utils.utilities import (get_event_cond, high_pass_filter, normalize)
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
