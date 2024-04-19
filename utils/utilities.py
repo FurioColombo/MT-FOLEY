@@ -1,3 +1,5 @@
+import os.path
+
 import librosa
 import matplotlib.pyplot as plt
 import numpy as np
@@ -5,6 +7,7 @@ import torch
 import torchaudio.transforms as T
 from scipy.signal import ellip, filtfilt, firwin, lfilter
 from torchaudio.transforms import MelSpectrogram
+from pathlib import Path
 
 
 # --- Preprocess Event ---
@@ -114,3 +117,13 @@ def plot_env(waveform):
 def check_nan(t:torch.Tensor, error_msg:str):
     if torch.isnan(t).any():
         raise RuntimeError(error_msg)
+
+def get_files_in_dir(path: str or Path, extension=None):
+    p = os.path.abspath(path)
+    assert os.path.isdir(p)
+    file_paths = [os.path.join(p, file) for file in os.listdir(p) if os.path.isfile(os.path.join(p, file))]
+    if extension is not None:
+        assert type(extension) is str
+        extension = extension.split('.')[-1]
+        file_paths = [f for f in file_paths if f.split('.')[-1] == extension]
+    return file_paths

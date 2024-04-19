@@ -1,10 +1,14 @@
 import os
-from params import params
-# os.environ["CUDA_VISIBLE_DEVICES"] = params["CUDA_VISIBLE_DEVICES"]
+import sys
+from pathlib import Path
+# os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 from torch.cuda import device_count
 from torch.multiprocessing import spawn
-from learner import train, train_distributed
+
+sys.path.append(str(Path(__file__).parent.parent.absolute()))
+from params.params import params
+from train.learner_2 import train, train_distributed
 
 def _get_free_port():
     import socketserver
@@ -17,6 +21,10 @@ def check_model_params():
     if params['train_cond_dirs'] is not None:
         print('Conditioning will be loaded from file!')
 
+    if params['use_profiler'] is True:
+        assert params['wait'] is not None
+        assert params['warmup'] is not None
+        assert params['active'] is not None
     # GPUs
     print("Cuda GPUs codes set to be used:", params["CUDA_VISIBLE_DEVICES"])
 
@@ -27,7 +35,7 @@ def main():
     if replica_count > 1:
         if params['batch_size'] % replica_count != 0:
             raise ValueError(
-                f"Batch size {params['batch_size']} is not evenly divisble by # GPUs {replica_count}."
+                f"Batch size {params['batch_size']} is not evenly divisible by # GPUs {replica_count}."
             )
         params['batch_size'] = params['batch_size'] // replica_count
         port = _get_free_port()

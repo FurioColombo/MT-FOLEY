@@ -9,11 +9,11 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from dataset import from_path as dataset_from_path
-from model import UNet
-from sampler import SDESampling
-from sde import SubVpSdeCos
-from utils import get_event_cond, high_pass_filter, normalize, plot_env
+from data.dataset import from_path as dataset_from_path
+from model.model import UNet
+from model.sampler import SDESampling
+from model.sde import SubVpSdeCos
+from utils.utils import get_event_cond, high_pass_filter, normalize, plot_env
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -36,7 +36,7 @@ class Learner:
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
         self.model = model
-        self.ema_weights = [param.clone().detach()
+        self.ema_weights = [param.clone()
                             for param in self.model.parameters()]
         self.lr = params['lr']
         self.epoch = 0
@@ -53,7 +53,8 @@ class Learner:
 
         self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.optimizer, factor=params['scheduler_factor'],
+            self.optimizer,
+            factor=params['scheduler_factor'],
             patience=params['scheduler_patience_epoch'] * len(self.train_set) // params['num_steps_to_test'],
             threshold=params['scheduler_threshold']
         )
@@ -93,7 +94,7 @@ class Learner:
 
                 # Logging by steps
                 if self.is_master:
-                    if self.step % self.params['n_steps_to_log'] == self.params['n_steps_to_log'] - 1:
+                    if (self.step % self.params['num_steps_to_log']) == (self.params['num_steps_to_log']-1):
                         self._write_summary(self.step)
 
                     if self.step % self.params['num_steps_to_test'] == 0:
@@ -104,7 +105,7 @@ class Learner:
 
             # Logging by epochs
             if self.is_master:
-                if self.epoch > 0 and self.epoch % self.params['num_epochs_to_save'] == 0:
+                if self.epoch > 0 and self.epoch % self.params['num_epochs_to_log'] == 0:
                     self._write_inference_summary(self.step, device)
                     self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
                 self.epoch += 1
@@ -125,30 +126,38 @@ class Learner:
         noisy_audio = self.sde.perturb(audio, t, noise)
         sigma = self.sde.sigma(t)
         predicted = self.model(noisy_audio, sigma, classes, events)
+
         loss = self.loss_fn(noise, predicted)
-
         loss.backward()
-        self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-        self.optimizer.step()
-        if self.is_master:
-            self.update_ema_weights()
 
-        # todo:
-        # t_detach = t.clone().detach().cpu().numpy()
-        # t_detach = np.reshape(t_detach, -1)
-        t_detach = t.clone().detach()
-        t_detach = torch.reshape(t_detach, (-1,))
+        with torch.no_grad():
+            self.grad_norm = nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+            self.optimizer.step()
+            if self.is_master:
+                self.update_ema_weights()
 
-        vectorial_loss = self.v_loss(noise, predicted).detach()
-        # todo: check this is not slow
-        vectorial_loss = torch.mean(vectorial_loss, dim=1)
-        vectorial_loss = torch.reshape(vectorial_loss, (-1,))
-        # vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
-        # vectorial_loss = np.reshape(vectorial_loss, -1)
+            # todo:
+            # t_detach = t.clone().detach().cpu().numpy()
+            # t_detach = np.reshape(t_detach, -1)
 
-        self.update_conditioned_loss(vectorial_loss, t_detach, is_train=True)
-        self.cum_grad_norms += self.grad_norm
-        return loss
+            # t_detach = t.clone()
+            # print('t_detach', t_detach.size()) # torch.Size([8, 1])
+            # t_detach = torch.reshape(t_detach, (-1,))
+            # print('t_detach', t_detach.size()) # torch.Size([8])
+
+            # print('t', t.size()) # torch.Size([8, 1])
+            t = torch.reshape(t, (-1,)) # BROKEN - shape '[1]' is invalid for input of size 8
+            # print('t', t.size())
+
+            vectorial_loss = self.v_loss(noise, predicted)
+            vectorial_loss = torch.mean(vectorial_loss, dim=1)
+            vectorial_loss = torch.reshape(vectorial_loss, (-1,))
+            # vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
+            # vectorial_loss = np.reshape(vectorial_loss, -1)
+
+            self.update_conditioned_loss(vectorial_loss, t, is_train=True)
+            self.cum_grad_norms += self.grad_norm
+            return loss
 
     @torch.no_grad()
     # Test
@@ -168,18 +177,20 @@ class Learner:
             sigma = self.sde.sigma(t)
             predicted = self.model(noisy_audio, sigma, classes, events)
 
-            vectorial_loss = self.v_loss(noise, predicted).detach()
             # todo: suspicious detach() cpu() numpy()
+            # vectorial_loss = self.v_loss(noise, predicted).detach()
             # vectorial_loss = torch.mean(vectorial_loss, 1).cpu().numpy()
             # vectorial_loss = np.reshape(vectorial_loss, -1)
             # t = t.cpu().numpy()
             # t = np.reshape(t, -1)
+
+            vectorial_loss = self.v_loss(noise, predicted)
             vectorial_loss = torch.mean(vectorial_loss, dim=1)
             vectorial_loss = torch.reshape(vectorial_loss, (-1,))
 
-            t_detach = torch.reshape(t, (-1,))
+            t = torch.reshape(t, (-1,))
 
-            self.update_conditioned_loss(vectorial_loss, t_detach, is_train=False)
+            self.update_conditioned_loss(vectorial_loss, t, is_train=False)
 
     # Update loss & ema weights
     def update_conditioned_loss(self, vectorial_loss, continuous_array, is_train):
@@ -197,7 +208,7 @@ class Learner:
     def update_ema_weights(self):
         for ema_param, param in zip(self.ema_weights, self.model.parameters()):
             if param.requires_grad:
-                ema_param -= (1 - self.ema_rate) * (ema_param - param.detach())
+                ema_param -= (1 - self.ema_rate) * (ema_param - param)
 
     # Logging stuff
     def _write_summary(self, step):
@@ -214,8 +225,8 @@ class Learner:
         writer = self.summary_writer or SummaryWriter(
             self.model_dir, purge_step=step)
 
-        writer.add_scalar('train/sum_loss_on_n_steps', sum_loss_n_steps, step)
-        writer.add_scalar("train/mean_grad_norm", mean_grad_norms, step)
+        writer.add_scalar('train/sum_loss_on_n_steps', sum_loss_n_steps.clone().detach(), step)
+        writer.add_scalar("train/mean_grad_norm", mean_grad_norms.clone().detach(), step)
         writer.add_scalars("train/conditioned_loss", dic_loss_train, step)
         writer.add_scalar("train/learning_rate", self.optimizer.param_groups[0]['lr'], step)
         writer.flush()
@@ -230,7 +241,7 @@ class Learner:
         )
         dic_loss_test = {}
         for k in range(self.n_bins):
-            dic_loss_test["loss_bin_" + str(k)] = loss_in_bins_test[k]
+            dic_loss_test["loss_bin_" + str(k)] = loss_in_bins_test[k].detach()
 
         writer = self.summary_writer or SummaryWriter(
             self.model_dir, purge_step=step)

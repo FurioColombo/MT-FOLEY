@@ -30,4 +30,7 @@ def enum_txt_file_lines():
         print()
 
 
-enum_txt_file_lines()
+def print_current_working_dir():
+    # Get the current working directory
+    cwd = os.getcwd()
+    print(cwd)

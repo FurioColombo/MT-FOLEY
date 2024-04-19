@@ -22,6 +22,7 @@ class SDE(torch.nn.Module):
     
 class VpSdeCos(SDE):
     def __init__(self):
+        super().__init__()
         self.t_min = 0.007
         self.t_max = 1 - 0.007
 

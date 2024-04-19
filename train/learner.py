@@ -1,20 +1,24 @@
+import gc
 import json
 import os
 import random
 from glob import glob
 
 import numpy as np
+import psutil
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from dataset import from_path as dataset_from_path
-from model import UNet
-from sampler import SDESampling
-from sde import SubVpSdeCos
-from utils import get_event_cond, high_pass_filter, normalize, plot_env, check_nan
+import utils.notifications
+from data.dataset import from_path as dataset_from_path
+from model.tfmodel import UNet
+from model.sampler import SDESampling
+from model.sde import SubVpSdeCos
+from utils.utilities import get_event_cond, high_pass_filter, normalize, plot_env, check_nan
+
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -27,6 +31,12 @@ def _nested_map(struct, map_fn):
         return {k: _nested_map(v, map_fn) for k, v in struct.items()}
     return map_fn(struct)
 
+def gc_collect():
+    gc.disable()
+    gc.collect()
+    gc.enable()
+
+
 # --- Learner ---
 class Learner:
     def __init__(
@@ -34,90 +44,112 @@ class Learner:
     ):
         os.makedirs(model_dir, exist_ok=True)
         self.model_dir = model_dir
+        self.tensorboard_dir = os.path.join(self.model_dir, 'tensorboard')
         self.model = model
         self.ema_weights = [param.clone().detach()
                             for param in self.model.parameters()]
         self.lr = params['lr']
         self.epoch = 0
         self.step = 0
+        self.valid_loss = None
+        self.best_val_loss = None
         self.is_master = True
         self.distributed = distributed
-        self.restore_from_checkpoint(params['checkpoint_id'])
-        
+
         self.sde = SubVpSdeCos()
         self.ema_rate = params['ema_rate']
         self.train_set = train_set
         self.test_set = test_set
         self.params = params
+        self.use_profiler = params['use_profiler']
 
-        self.optimizer = torch.optim.Adam(model.parameters(), lr=5.4723e-6) # todo: loading lr from params doesn't work
+        self.optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer,
             factor=params['scheduler_factor'],
             patience=params['scheduler_patience_epoch'] * len(self.train_set) // params['n_steps_to_test'],
-            threshold=params['scheduler_threshold']
+            threshold=params['scheduler_threshold'],
         )
+        self.restore_from_checkpoint(params['checkpoint_id'])
+
         self.params['total_params_num'] = sum(p.numel() for p in model.parameters() if p.requires_grad)
 
         self.loss_fn = nn.MSELoss()
         self.v_loss = nn.MSELoss(reduction="none")
-        self.summary_writer = None
+        self.summary_writer = SummaryWriter(self.tensorboard_dir, purge_step=self.step)
         self.n_bins = params['n_bins']
         self.num_elems_in_bins_train = np.zeros(self.n_bins)
         self.sum_loss_in_bins_train = np.zeros(self.n_bins)
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
         self.sum_loss_in_bins_test = np.zeros(self.n_bins)
         self.cum_grad_norms = 0
-        self.valid_loss = float(0)
-        self.best_valid_loss = float(100)
 
     # Train
-    def train(self):
+    def train(self, profiler=None):
         device = next(self.model.parameters()).device
         while self.epoch <= self.params['n_epochs']:
-            if self.distributed: self.train_set.sampler.set_epoch(self.epoch)
-            for features in (
-                tqdm(self.train_set,
-                     desc=f"Epoch {self.epoch}")
-                if self.is_master
-                else self.train_set
-            ):
-                self.model.train()
-                features = _nested_map(
-                    features,
-                    lambda x: x.to(device) if isinstance(x, torch.Tensor) else x,
-                )
-                loss = self.train_step(features)
-                check_nan(t=loss, error_msg=f"Detected NaN loss at step {self.step}.")
-                    
-                # Logging by steps | train losses, etc
-                if self.is_master:
-                    if self.step % self.params['n_steps_to_log'] == self.params['n_steps_to_log'] - 1:
-                        self._write_train_summary(self.step)
-                        self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+            self.train_epoch(device=device, prof=profiler)
 
-                    # Validation loss
-                    if self.step % self.params['n_steps_to_test'] == 0:
-                        self.test_set_evaluation()
-                        self.valid_loss = sum(self.sum_loss_in_bins_test) / sum(self.num_elems_in_bins_test)
-                        if self.valid_loss < self.best_valid_loss:
-                            self.best_valid_loss = self.valid_loss
-                            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
-                        self.scheduler.step(self.valid_loss)
-                        self._write_test_summary(self.step)
-                self.step += 1
-            
-            # End of epoch stuff
-            if self.is_master:
-                # if self.epoch > 0:
-                if self.epoch % self.params['n_epochs_to_log'] == 0:
-                    # Summary writer full inference
-                    self._write_inference_summary(self.step, device)
+        # notify end of training
+        notification = f'TRAINING FINISHED\nepoch {self.epoch} - step {self.step}\nbest_val_loss: {self.best_val_loss}'
+        utils.notifications.notify_telegram(notification)
 
-                # Save best model's checkpoints
-                if self.epoch % self.params['n_epochs_to_checkpoint'] == self.params['n_epochs_to_checkpoint'] - 1:
-                    self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
-                self.epoch += 1
+    def train_epoch(self, device, prof=None):
+        if self.distributed: self.train_set.sampler.set_epoch(self.epoch)
+        for features in (
+            tqdm(self.train_set,
+                 desc=f"Epoch {self.epoch}")
+            if self.is_master
+            else self.train_set
+        ):
+            if prof is not None:
+                prof.step()
+
+            self.model.train()
+            features = _nested_map(
+                features,
+                lambda x: x.to(device) if isinstance(x, torch.Tensor) else x,
+            )
+            loss = self.train_step(features)
+            check_nan(t=loss, error_msg=f"Detected NaN loss at step {self.step}.")
+
+            # Logging by steps | train losses, etc
+            if self.is_master and self.step > 0:
+                self._check_RAM_usage()
+
+                if self.step % self.params['n_steps_to_log'] == 0:
+                    self._write_train_summary(self.step)
+
+                # Validation loss
+                if self.step % self.params['n_steps_to_test'] == 0:
+                    self.val_step()
+            self.step += 1
+
+        # End of epoch stuff
+        if self.is_master:
+            if self.epoch % self.params['n_epochs_to_log'] == 0:
+                # Summary writer full inference
+                self._write_inference_summary(self.step, device)
+                notification = f'EPOCH {self.epoch} - step {self.step}' \
+                               f'\nbest_val_loss: {self.best_val_loss}'
+                utils.notifications.notify_telegram(notification)
+
+            # Save best model's checkpoints
+            if self.epoch % self.params['n_epochs_to_checkpoint'] == 0 or self.epoch == self.params['n_epochs']:
+                self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+            self.epoch += 1
+            gc_collect()
+
+    def val_step(self):
+        self.test_set_evaluation()
+
+        self.valid_loss = sum(self.sum_loss_in_bins_test) / sum(self.num_elems_in_bins_test)
+        self._update_best_val_loss(self.valid_loss)
+
+        self.scheduler.step(self.valid_loss)
+        self.lr = self.scheduler.get_last_lr()
+
+        self._write_test_summary(self.step)
 
     def train_step(self, features):
         for param in self.model.parameters():
@@ -211,15 +243,12 @@ class Learner:
         sum_loss_n_steps = np.sum(self.sum_loss_in_bins_train)
         mean_grad_norms = self.cum_grad_norms / self.num_elems_in_bins_train.sum() * \
                           self.params['batch_size']
-        writer = self.summary_writer or SummaryWriter(
-            self.model_dir, purge_step=step)
 
-        writer.add_scalar('train/sum_loss_on_n_steps', sum_loss_n_steps, step)
-        writer.add_scalar("train/mean_grad_norm", mean_grad_norms, step)
-        writer.add_scalars("train/conditioned_loss", dic_loss_train, step)
-        writer.add_scalar("train/learning_rate", self.optimizer.param_groups[0]['lr'], step)
-        writer.flush()
-        self.summary_writer = writer
+        self.summary_writer.add_scalar('train/sum_loss_on_n_steps', sum_loss_n_steps, step)
+        self.summary_writer.add_scalar("train/mean_grad_norm", mean_grad_norms, step)
+        self.summary_writer.add_scalars("train/conditioned_loss", dic_loss_train, step)
+        self.summary_writer.add_scalar("train/learning_rate", self.optimizer.param_groups[0]['lr'], step)
+        self.summary_writer.flush()
         self.num_elems_in_bins_train = np.zeros(self.n_bins)
         self.sum_loss_in_bins_train = np.zeros(self.n_bins)
         self.cum_grad_norms = 0
@@ -232,15 +261,11 @@ class Learner:
         for k in range(self.n_bins):
             dic_loss_test["loss_bin_" + str(k)] = loss_in_bins_test[k]
 
-        writer = self.summary_writer or SummaryWriter(
-            self.model_dir, purge_step=step)
-        writer.add_scalars("test/conditioned_loss", dic_loss_test, step)
-        writer.add_scalar("test/sum_loss_on_n_steps", np.sum(self.sum_loss_in_bins_test), step)
-        writer.add_scalar("test/val_loss", self.valid_loss, step)
-        writer.add_scalar("test/best_val_loss", self.best_valid_loss, step)
-
-        writer.flush()
-        self.summary_writer = writer
+        self.summary_writer.add_scalars("test/conditioned_loss", dic_loss_test, step)
+        self.summary_writer.add_scalar("test/sum_loss_on_n_steps", np.sum(self.sum_loss_in_bins_test), step)
+        self.summary_writer.add_scalar("test/val_loss", self.valid_loss, step)
+        self.summary_writer.add_scalar("test/best_val_loss", self.best_val_loss, step)
+        self.summary_writer.flush()
         self.num_elems_in_bins_test = np.zeros(self.n_bins)
         self.sum_loss_in_bins_test = np.zeros(self.n_bins)
 
@@ -252,9 +277,8 @@ class Learner:
         test_event = test_feature["event"].unsqueeze(0).to(device)
         
         event_loss = []
-        writer = self.summary_writer or SummaryWriter(self.model_dir, purge_step=step)
-        writer.add_audio(f"test_sample/audio", test_feature["audio"], step, sample_rate=22050)
-        writer.add_image(f"test_sample/envelope", plot_env(test_feature["audio"]), step, dataformats='HWC')
+        # self.summary_writer.add_audio(f"test_sample/audio", test_feature["audio"], step, sample_rate=22050) #todo: is this too heavy on RAM?
+        # self.summary_writer.add_image(f"test_sample/envelope", plot_env(test_feature["audio"]), step, dataformats='HWC')
 
         
         for class_idx in range(len(LABELS)):
@@ -268,12 +292,12 @@ class Learner:
             sample = high_pass_filter(sample, sr=22050)
             
             event_loss.append(self.loss_fn(test_event.squeeze(0).cpu(), get_event_cond(sample, self.params['event_type'])))
-            writer.add_audio(f"{LABELS[class_idx]}/audio", sample, step, sample_rate=22050)
-            writer.add_image(f"{LABELS[class_idx]}/envelope", plot_env(sample), step, dataformats='HWC')
+            # self.summary_writer.add_audio(f"{LABELS[class_idx]}/audio", sample, step, sample_rate=22050) #todo: is this too heavy on RAM?
+            # self.summary_writer.add_image(f"{LABELS[class_idx]}/envelope", plot_env(sample), step, dataformats='HWC')
         
         event_loss = sum(event_loss) / len(event_loss)
-        writer.add_scalar(f"test/event_loss", event_loss, step)
-        writer.flush()
+        self.summary_writer.add_scalar(f"test/event_loss", event_loss, step)
+        self.summary_writer.flush()
 
     # Utils
     def get_random_test_feature(self):
@@ -296,8 +320,15 @@ class Learner:
                 k: v.cpu() if isinstance(v, torch.Tensor) else v
                 for k, v in model_state.items()
             },
+            "optimizer": {
+                k: v for k, v in self.optimizer.state_dict().items()
+            },
+            "scheduler": {
+                k: v for k, v in self.scheduler.state_dict().items()
+            },
             "ema_weights": self.ema_weights,
             "lr": self.lr,
+            "best_val_loss": self.best_val_loss
         }
 
     def load_state_dict(self, state_dict):
@@ -305,10 +336,13 @@ class Learner:
             self.model.module.load_state_dict(state_dict["model"])
         else:
             self.model.load_state_dict(state_dict["model"])
+        self.optimizer.load_state_dict(state_dict["optimizer"])
+        self.scheduler.load_state_dict(state_dict["scheduler"])
         self.epoch = state_dict["epoch"]
-        self.step = state_dict["step"]
+        self.step = state_dict["step"] + 1
         self.ema_weights = state_dict["ema_weights"]
         self.lr = state_dict["lr"]
+        self.best_val_loss = state_dict["best_val_loss"]
 
     def restore_from_checkpoint(self, checkpoint_id=None):
         try:
@@ -325,10 +359,24 @@ class Learner:
             return False
         
     def save_to_checkpoint(self, filename="weights"):
-        save_basename = f"{filename}_step-{self.step}.pt"
-        save_name = f"{self.model_dir}/{save_basename}"
-        print("saving model to:", save_name)
-        torch.save(self.state_dict(), save_name)
+        if self.step > 0:
+            save_basename = f"{filename}_step-{self.step}.pt"
+            save_name = f"{self.model_dir}/{save_basename}"
+            print("\nsaving model to:", save_name)
+            torch.save(self.state_dict(), save_name)
+
+    def _check_RAM_usage(self):
+        ram_usage = psutil.virtual_memory().percent
+        if ram_usage >= 80.0:
+            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+            notification = f'TRAINING INTERRUPTED\nepoch {self.epoch} - step {self.step}\nThreshold ram_usage exceeded:{ram_usage}%'
+            utils.notifications.notify_telegram(notification)
+            raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')
+
+    def _update_best_val_loss(self, val_loss):
+        if self.best_val_loss is None or val_loss < self.best_val_loss:
+            self.best_val_loss = self.valid_loss
+            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
 
 # --- Training functions ---
 def _train_impl(replica_id, model, train_set, test_set, params, distributed=False):
@@ -338,7 +386,18 @@ def _train_impl(replica_id, model, train_set, test_set, params, distributed=Fals
     )
     learner.is_master = replica_id == 0
     learner.log_params()
-    learner.train()
+    if params['use_profiler']:
+        with torch.profiler.profile(
+            schedule=torch.profiler.schedule(wait=params['wait'], warmup=params['warmup'],
+                                             active=params['active'], repeat=params['repeat']),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(os.path.join(params['model_dir'], 'tensorboard')),
+            record_shapes=True,
+            profile_memory=True,
+            with_stack=False
+        ) as prof:
+            learner.train(profiler=prof)
+    else:
+        learner.train()
 
 
 def train(params):

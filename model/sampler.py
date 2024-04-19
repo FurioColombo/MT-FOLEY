@@ -1,5 +1,4 @@
 import torch
-from scipy.integrate import solve_ivp
 
 
 class SDESampling:

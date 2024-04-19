@@ -21,5 +21,6 @@ triton==2.1.0
 
 # Common utils
 torch-summary==1.4.5
+torch_tb_profiler==0.4.3
 gpustat==1.1.1
 tmuxp==1.45.0
