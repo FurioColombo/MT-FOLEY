@@ -1,6 +1,9 @@
 from pathlib import Path
+from tqdm import tqdm
+
 import argparse
 import os.path
+import psutil
 import sys
 
 import torch
@@ -9,14 +12,26 @@ import torchaudio as tAudio
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from eval.sample_generator import SampleGenerator
 
+
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
+
+
+def _check_RAM_usage():
+    ram_usage = psutil.virtual_memory().percent
+    if ram_usage > 80.0:  # todo: move to params.py
+        raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')
 
 def list_checkpoint_paths_in_dir(dir: str or Path):
     d = os.path.abspath(dir)
     files = [os.path.abspath(os.path.join(d, f)) for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)) and f.split('.')[-1] == "pt"]
     return files
 
+def prepare_machine():
+    # Set model and sampler
+    tAudio.set_audio_backend('sox_io')
+
 def main(args):
+    prepare_machine()
     os.makedirs(args.output_dir, exist_ok=True)
 
     # Set models
@@ -30,9 +45,14 @@ def main(args):
     # Set sampler
     tAudio.set_audio_backend('sox_io')
     device = torch.device('cuda')
-    gen = SampleGenerator(labels=LABELS, args=args, device=device)
+    gen = SampleGenerator(
+        labels=LABELS,
+        args=args,
+        device=device,
+    )
 
-    for path in checkpoints_paths:
+    for path in tqdm(checkpoints_paths, desc=f"checkpoints inference:"):
+        _check_RAM_usage()
         gen.make_inference(
             args=args,
             checkpoint_path=path,

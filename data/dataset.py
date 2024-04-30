@@ -6,7 +6,7 @@ import torch
 import torchaudio
 from torch.utils.data.distributed import DistributedSampler
 
-from utils.utils import get_event_cond
+from utils.utilities import get_event_cond
 
 
 def parse_filelist(filelist_path):

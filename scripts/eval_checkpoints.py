@@ -1,8 +1,10 @@
 from pathlib import Path
 import argparse
+import psutil
 import json
 import csv
 import sys
+import re
 import gc
 import os
 
@@ -18,9 +20,22 @@ from eval.checkpoint_eval import CheckpointEvaluator
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
 
-def list_checkpoint_paths_in_dir(dir: str or Path):
+
+
+def list_checkpoint_paths_in_dir(dir: str or Path, sort_paths: bool=True):
+    def _extract_step(s):
+        step = s.split('-')[-1]
+        step = step.split('.')[0]
+        if len(step) == 0:
+            raise ValueError(f'Path to checkpoint {s} does not contain step in the correct format.')
+        return step
+
     d = os.path.abspath(dir)
     files = [os.path.abspath(os.path.join(d, f)) for f in os.listdir(d) if os.path.isfile(os.path.join(d, f)) and f.split('.')[-1] == "pt"]
+
+    if sort_paths:
+        files = sorted(files, key=_extract_step)
+
     return files
 
 
@@ -44,6 +59,9 @@ def main(args, params):
     if os.path.isdir(os.path.abspath(args.checkpoints_path)):
         checkpoints_paths = list_checkpoint_paths_in_dir(os.path.abspath(args.checkpoints_path))
         print('Evaluating', len(checkpoints_paths), 'checkpoints')
+        for path in checkpoints_paths:
+            print(path)
+        print()
     elif os.path.isfile(os.path.abspath(args.checkpoints_path)):
         checkpoints_paths = [os.path.abspath(args.checkpoints_path),]
         print('Evaluating single checkpoint path:', checkpoints_paths[0])
@@ -77,7 +95,9 @@ def main(args, params):
         sde = VpSdeCos()
 
         for path in checkpoints_paths:
+            _check_RAM_usage()
             step = get_step_from_checkpoint_path(path)
+
             if int(step) >= args.start_step:
                 print('evaluating: ', path)
                 # prepare model and sampling

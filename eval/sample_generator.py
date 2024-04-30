@@ -1,6 +1,7 @@
 import os
 import json
 from pathlib import Path
+import random
 
 import torch
 import numpy as np
@@ -9,13 +10,12 @@ import torchaudio as tAudio
 import pydub
 import soundfile as sf
 from scipy.io.wavfile import write
-from tqdm import tqdm
 
 from model.tfmodel import UNet
 from model.sampler import SDESampling_batch
 from model.sde import VpSdeCos
+from data.dataset import from_path as dataset_from_path
 from utils.utilities import adjust_audio_length, get_event_cond, high_pass_filter, normalize, resample_audio
-
 
 def load_ema_weights(model, model_path):
     checkpoint = torch.load(model_path)
@@ -81,7 +81,6 @@ class SampleGenerator:
         self.labels = labels
         self.device = device
         self.n_gen_samples_per_class = args.N
-        self.target_audio_path = args.target_audio_path
         self.stereo = args.stereo
         self.results_dir = args.output_dir
 
@@ -93,10 +92,12 @@ class SampleGenerator:
 
         self.target_audio = None
         self.target_event = None
-        self.update_conditioning(self.target_audio_path)
+        self.update_conditioning(args.target_audio_path)
 
-    def make_inference(self, args, checkpoint_path: str or Path, target_audio_path=None):
-        self.update_conditioning(target_audio_path)
+        self.test_set = None
+
+    def make_inference(self, args, checkpoint_path: str or Path, same_class_conditioning=False):
+        self.update_conditioning(args.target_audio_path)
 
         # load model
         model = UNet(len(self.labels), self.params).to(self.device)
@@ -110,11 +111,15 @@ class SampleGenerator:
         else:
             class_indices = [self.labels.index(args.class_name)]
 
-        generated = self.generate_samples(
-            class_indices,
-            sampler,
-            args.cond_scale,
-            checkpoint_path
+        if same_class_conditioning:
+            self.test_set = dataset_from_path(self.params['test_dirs'], self.params, self.labels, cond_dirs=self.params['test_cond_dirs'])
+
+        generated = self._generate_samples(
+            class_indices = class_indices,
+            sampler = sampler,
+            cond_scale = args.cond_scale,
+            checkpoint_path = checkpoint_path,
+            same_class_conditioning=same_class_conditioning
         )
         print('Done!')
 
@@ -126,24 +131,39 @@ class SampleGenerator:
                 dists.append(dist)
             print(f"E-L1 distance: {np.mean(dists)}")
 
-    def generate_samples(self, class_indices:list, sampler, cond_scale, checkpoint_path):
-        generated_samples = []
-        for class_idx in tqdm(class_indices, desc=f"checkpoint: {checkpoint_path.split('/')[-1]}"):
+    def _generate_samples(self, class_indices:list, sampler, cond_scale, checkpoint_path, same_class_conditioning: False):
+        def _compute_conditioning():
+            if same_class_conditioning:
+                target_audio = self.get_random_test_sample(class_index=class_idx)
+                target_event = target_audio["event"].unsqueeze(0).to(self.device)
+            else:
+                target_event = self.target_event
+                target_audio = self.target_audio
+
+            return target_audio, target_event
+
+        def _generate_conditioned_samples():
             # print(f"Generate {self.n_gen_samples_per_class} samples of class \'{self.labels[class_idx]}\'...")
             noise = torch.randn(self.n_gen_samples_per_class, self.audio_length, device=self.device)
             classes = torch.tensor([class_idx] * self.n_gen_samples_per_class, device=self.device)
             sampler.batch_size = self.n_gen_samples_per_class
-            class_samples = sampler.predict(noise, 100, classes, self.target_event, cond_scale=cond_scale)
+            samples = sampler.predict(noise, 100, classes, target_event, cond_scale=cond_scale)
 
             out_dir = self.compute_out_dir(self.results_dir, checkpoint_path=checkpoint_path)
             save_samples(
-                class_samples,
+                samples,
                 out_dir,
                 self.sample_rate,
                 self.labels[class_idx],
                 self.stereo,
-                self.target_audio
+                target_audio
             )
+            return samples
+
+        generated_samples = []
+        for class_idx in class_indices:
+            target_audio, target_event = _compute_conditioning()
+            class_samples = _generate_conditioned_samples()
             generated_samples.append(class_samples)
         return generated_samples
 
@@ -161,16 +181,30 @@ class SampleGenerator:
         self.target_audio = None
         self.target_event = None
 
-    def compute_out_dir(self, results_dir, checkpoint_path):
+    def compute_out_dir(self, results_dir, checkpoint_path, category: str=None):
         # results directory
         results_dir = os.path.abspath(results_dir)
         if not os.path.isdir(results_dir):
             os.mkdir(results_dir)
+
         # epoch inference directory
         epoch_results_dir_name = checkpoint_path.split('.')[0].split('/')[-1]
+        directory = os.path.join(results_dir, epoch_results_dir_name)
+        if not os.path.isdir(directory):
+            os.mkdir(directory)
 
-        epoch_results_dir_path = os.path.join(results_dir, epoch_results_dir_name)
-        if not os.path.isdir(epoch_results_dir_path):
-            os.mkdir(epoch_results_dir_path)
-        # todo: on folder per class ?
-        return  epoch_results_dir_path
+        # category inference directory
+        if category is not None:
+            directory = os.path.join(directory, category)
+            if not os.path.isdir(directory):
+                os.mkdir(directory)
+
+        return  directory
+
+
+    def get_random_test_sample(self, class_index: int=None): # TODO: make this a dataset class
+        if class_index is None:
+            return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]
+        else:
+            test_set_category =  self.test_set.labels[class_index]
+            return test_set_category.dataset[random.choice(range(len(test_set_category.dataset)))]

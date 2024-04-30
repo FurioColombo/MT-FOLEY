@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.utils import plot_env, normalize, high_pass_filter, get_event_cond
+from utils.utilities import plot_env, normalize, high_pass_filter, get_event_cond
 
 
 class CheckpointEvaluator:
@@ -22,14 +22,18 @@ class CheckpointEvaluator:
         self.device = device
         self.event_type = event_type
 
-    def test_checkpoint_inference(self, step, cond_scale=3., sampler=None):
+    def test_checkpoint_inference(self, step, conditioned=True, cond_scale=3., sampler=None):
         # update sampler
         self.sampler = sampler if sampler is not None else self.sampler
         assert self.sampler is not None
 
         # test features
-        test_feature = self.get_random_test_feature()
-        test_event = test_feature["event"].unsqueeze(0).to(self.device)
+        if conditioned:
+            test_feature = self.get_random_test_sample()
+            test_event = test_feature["event"].unsqueeze(0).to(self.device)
+        else:
+            test_feature = None
+            test_event = None
 
         # Summary Writer
         writer = self.summary_writer or SummaryWriter(self.writer_dir, purge_step=int(step))
@@ -65,5 +69,5 @@ class CheckpointEvaluator:
     def set_sampler(self, sampler):
         self.sampler = sampler
 
-    def get_random_test_feature(self): # todo: make this a dataset class
+    def get_random_test_sample(self): # TODO: make this a dataset class
         return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]

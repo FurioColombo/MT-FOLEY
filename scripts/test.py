@@ -34,7 +34,3 @@ def print_current_working_dir():
     # Get the current working directory
     cwd = os.getcwd()
     print(cwd)
-
-import sys
-for path in sys.path:
-    print(path)
