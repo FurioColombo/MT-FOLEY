@@ -20,4 +20,5 @@ retrained_tfoley_results/
 
 .wav
 .pt
+.iml
 __pychache__/

@@ -444,4 +444,4 @@ def train_distributed(replica_id, replica_count, port, params):
     model = DistributedDataParallel(model, device_ids=[replica_id],
                                     find_unused_parameters=True)  # todo: t-foley implementation uses find_unused_parameters=False
 
-    _train_impl(replica_id, model, train_set, test_set, params, distributed=True)
+    _train_impl(replica_id, model, train_set, test_set, params, device, distributed=True)
