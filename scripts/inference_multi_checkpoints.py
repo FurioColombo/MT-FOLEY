@@ -3,7 +3,6 @@ from tqdm import tqdm
 
 import argparse
 import os.path
-import psutil
 import sys
 
 import torch
@@ -11,15 +10,11 @@ import torchaudio as tAudio
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from eval.sample_generator import SampleGenerator
+from utilities import check_RAM_usage
 
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
-
-def _check_RAM_usage():
-    ram_usage = psutil.virtual_memory().percent
-    if ram_usage > 80.0:  # todo: move to params.py
-        raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')
 
 def list_checkpoint_paths_in_dir(dir: str or Path):
     d = os.path.abspath(dir)
@@ -52,7 +47,7 @@ def main(args):
     )
 
     for path in tqdm(checkpoints_paths, desc=f"checkpoints inference:"):
-        _check_RAM_usage()
+        check_RAM_usage()
         gen.make_inference(
             args=args,
             checkpoint_path=path,

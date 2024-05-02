@@ -16,7 +16,8 @@ from data.dataset import from_path as dataset_from_path
 from model.tfmodel import UNet
 from model.sampler import SDESampling
 from model.sde import SubVpSdeCos
-from utils.utilities import get_event_cond, high_pass_filter, normalize, plot_env, check_nan
+from utils.utilities import get_event_cond, high_pass_filter, normalize, plot_env, check_nan, check_RAM_usage
+
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -118,8 +119,7 @@ class Learner:
 
             # Logging by steps | train losses, etc
             if self.is_master:
-                self._check_RAM_usage()
-
+                check_RAM_usage(callback=lambda: self.save_to_checkpoint(filename=f'epoch-{self.epoch}'))
                 if self.step % self.params['n_steps_to_log'] == 0:
                     self._write_train_summary(self.step)
 
@@ -280,7 +280,7 @@ class Learner:
         sde = SubVpSdeCos()
         sampler = SDESampling(self.model, sde)
 
-        test_feature = self.get_random_test_feature()
+        test_feature = self.test_set.dataset.get_random_sample()
         test_event = test_feature["event"].unsqueeze(0).to(device)
 
         event_loss = []
@@ -298,7 +298,8 @@ class Learner:
             sample = high_pass_filter(sample, sr=22050)
 
             event_loss.append(
-                self.loss_fn(test_event.squeeze(0).cpu(), get_event_cond(sample, self.params['event_type'])))
+                self.loss_fn(test_event.squeeze(0).cpu(), get_event_cond(sample, self.params['event_type']))
+            )
             self.summary_writer.add_audio(f"{LABELS[class_idx]}/audio", sample, step, sample_rate=22050) #todo: is this too heavy on RAM?
             self.summary_writer.add_image(f"{LABELS[class_idx]}/envelope", plot_env(sample), step, dataformats='HWC')
 
@@ -307,8 +308,6 @@ class Learner:
         self.summary_writer.flush()
 
     # Utils
-    def get_random_test_feature(self):
-        return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]
 
     def log_params(self):
         with open(os.path.join(self.model_dir, 'params.json'), 'w') as fp:
@@ -374,18 +373,11 @@ class Learner:
             utils.notifications.notify_telegram(f"saved model at epoch {self.epoch} - step {self.step}, with best_val_loss {self.best_val_loss}")
             torch.save(self.state_dict(), save_name)
 
-    def _check_RAM_usage(self): #todo: move to utils
-        ram_usage = psutil.virtual_memory().percent
-        if ram_usage > 87.0: # todo: move to params.py
-            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
-            notification = f'TRAINING INTERRUPTED\nepoch {self.epoch} - step {self.step}\nThreshold ram_usage exceeded:{ram_usage}%'
-            utils.notifications.notify_telegram(notification)
-            raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')
-
     def _update_best_val_loss(self, val_loss):
         if self.best_val_loss is None or val_loss < self.best_val_loss:
             self.best_val_loss = self.valid_loss
-            self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
+            if self.epoch > 5:
+                self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
 
 
 # --- Training functions ---

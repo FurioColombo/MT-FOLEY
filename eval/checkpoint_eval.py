@@ -8,9 +8,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from utils.utilities import plot_env, normalize, high_pass_filter, get_event_cond
 
-
 class CheckpointEvaluator:
-
     def __init__(self, test_set, labels:list, audio_length: int, device, writer_dir:str or Path, sampler=None, event_type='rms'):
         self.test_set = test_set
         self.labels = labels
@@ -29,7 +27,7 @@ class CheckpointEvaluator:
 
         # test features
         if conditioned:
-            test_feature = self.get_random_test_sample()
+            test_feature = self.test_set.dataset.get_random_sample()
             test_event = test_feature["event"].unsqueeze(0).to(self.device)
         else:
             test_feature = None
@@ -68,6 +66,3 @@ class CheckpointEvaluator:
 
     def set_sampler(self, sampler):
         self.sampler = sampler
-
-    def get_random_test_sample(self): # TODO: make this a dataset class
-        return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]

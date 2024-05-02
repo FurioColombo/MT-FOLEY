@@ -134,7 +134,7 @@ class SampleGenerator:
     def _generate_samples(self, class_indices:list, sampler, cond_scale, checkpoint_path, same_class_conditioning: False):
         def _compute_conditioning():
             if same_class_conditioning:
-                target_audio = self.get_random_test_sample(class_index=class_idx)
+                target_audio = self.test_set.dataset.get_random_sample_from_class(class_index=class_idx)
                 target_event = target_audio["event"].unsqueeze(0).to(self.device)
             else:
                 target_event = self.target_event
@@ -200,11 +200,3 @@ class SampleGenerator:
                 os.mkdir(directory)
 
         return  directory
-
-
-    def get_random_test_sample(self, class_index: int=None): # TODO: make this a dataset class
-        if class_index is None:
-            return self.test_set.dataset[random.choice(range(len(self.test_set.dataset)))]
-        else:
-            test_set_category =  self.test_set.labels[class_index]
-            return test_set_category.dataset[random.choice(range(len(test_set_category.dataset)))]

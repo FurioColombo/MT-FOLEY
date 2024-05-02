@@ -7,6 +7,9 @@ import torchaudio
 from torch.utils.data.distributed import DistributedSampler
 
 from utils.utilities import get_event_cond
+import random
+from torch.utils.data import Dataset
+
 
 
 def parse_filelist(filelist_path):
@@ -25,13 +28,59 @@ def parse_filelist(filelist_path):
         return filelist
 
 
-class AudioDataset(torch.utils.data.Dataset):
-    def __init__(self, paths, params, labels):
+def moving_avg(input, window_size):
+    if type(input) != list: input = list(input)
+    result = []
+    for i in range(1, window_size+1):
+        result.append(sum(input[:i])/i)
+
+    moving_sum = sum(input[:window_size])
+    result.append(moving_sum/window_size)
+    for i in range(len(input) - window_size):
+        moving_sum += (input[i+window_size] - input[i])
+        result.append(moving_sum/window_size)
+    return np.array(result)
+
+
+class AbstractAudioDataset(Dataset):
+    def __init__(self, params, labels):
         super().__init__()
-        self.filenames = []
         self.audio_length = params['audio_length']
         self.labels = labels
         self.event_type = params['event_type']
+
+    def __len__(self):
+        raise NotImplementedError("AbstractAudioDataset is an abstract class.")
+
+    def __getitem__(self, idx):
+        raise NotImplementedError("AbstractAudioDataset is an abstract class.")
+
+    def _load_audio(self, audio_filename):
+        signal, _ = torchaudio.load(audio_filename)
+        signal = signal[0, :self.audio_length]
+        return signal
+
+    def _extract_class_cond(self, audio_filename):
+        cls_name = os.path.dirname(audio_filename).split('/')[-1]
+        cls = torch.tensor(self.labels.index(cls_name))
+        return cls
+
+    def get_random_sample(self):
+        idx = random.randint(0, len(self) - 1)
+        return self.__getitem__(idx)
+
+    def get_random_sample_from_class(self, class_name):
+        class_indices = [i for i, cls in enumerate(self.labels) if cls == class_name]
+        if not class_indices:
+            raise ValueError(f"No samples found for class '{class_name}'")
+
+        idx = random.choice(class_indices)
+        return self.__getitem__(idx)
+
+class AudioDataset(AbstractAudioDataset):
+    def __init__(self, paths, params, labels):
+        super().__init__(params, labels)
+        self.filenames = []
         for path in paths:
             self.filenames += parse_filelist(path)
 
@@ -40,46 +89,26 @@ class AudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         audio_filename = self.filenames[idx]
-        signal, _ = torchaudio.load(audio_filename)
-        signal = signal[0, :self.audio_length]
-            
+        signal = self._load_audio(audio_filename)
+
         # extract class cond
-        cls_name = os.path.dirname(audio_filename).split('/')[-1]
-        cls = torch.tensor(self.labels.index(cls_name))
-        
-        # extract event cond
+        cls = self._extract_class_cond(audio_filename)
+
         event = signal.clone().detach()
         event = get_event_cond(event, self.event_type)
-        
+
         return {
             'audio': signal,
             'class': cls,
             'event': event
         }
-        
-    def moving_avg(self, input, window_size):
-        if type(input) != list: input = list(input)
-        result = []
-        for i in range(1, window_size+1):
-            result.append(sum(input[:i])/i)
-        
-        moving_sum = sum(input[:window_size])
-        result.append(moving_sum/window_size)
-        for i in range(len(input) - window_size):
-            moving_sum += (input[i+window_size] - input[i])
-            result.append(moving_sum/window_size)
-        return np.array(result)
-    
 
 
-class CondAudioDataset(torch.utils.data.Dataset):
+class CondAudioDataset(AbstractAudioDataset):
     def __init__(self, audio_paths, params, labels, cond_paths=None):
-        super().__init__()
+        super().__init__(params, labels)
         self.audio_filenames = []
         self.cond_filenames = []
-        self.audio_length = params['audio_length']
-        self.labels = labels
-        self.event_type = params['event_type']
         self.load_conditioning = audio_paths is not None
 
         if self.load_conditioning:
@@ -92,12 +121,10 @@ class CondAudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         audio_filename = self.audio_filenames[idx]
-        signal, _ = torchaudio.load(audio_filename)
-        signal = signal[0, :self.audio_length]
+        signal = self._load_audio(audio_filename)
 
         # extract class cond
-        cls_name = os.path.dirname(audio_filename).split('/')[-1]
-        cls = torch.tensor(self.labels.index(cls_name))
+        cls = self._extract_class_cond(audio_filename)
 
         cond_filename = self.cond_filenames[idx]
         event = torch.load(cond_filename)
@@ -107,7 +134,6 @@ class CondAudioDataset(torch.utils.data.Dataset):
             'class': cls,
             'event': event
         }
-
 
 def from_path(data_dirs, params, labels, distributed=False, cond_dirs=None):
     if cond_dirs is None:

@@ -1,13 +1,18 @@
+from pathlib import Path
 import os.path
+import psutil
+
 
 import librosa
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import torchaudio.transforms as T
+from torchaudio.transforms import MelSpectrogram, Resample
+
 from scipy.signal import ellip, filtfilt, firwin, lfilter
-from torchaudio.transforms import MelSpectrogram
-from pathlib import Path
+
+from params.params import params
+from utils import notifications
 
 
 # --- Preprocess Event ---
@@ -42,7 +47,7 @@ def get_onset(y, sr=22050):
     return torch.tensor(onsets, dtype=torch.float32)
 
 def resample_audio(audio, original_sr, target_sr):
-    resampler = T.transforms.Resample(original_sr, target_sr, resampling_method='sinc_interpolation')
+    resampler = Resample(original_sr, target_sr, resampling_method='sinc_interpolation')
     return resampler(audio)
 
 def adjust_audio_length(audio, length):
@@ -127,3 +132,13 @@ def get_files_in_dir(path: str or Path, extension=None):
         extension = extension.split('.')[-1]
         file_paths = [f for f in file_paths if f.split('.')[-1] == extension]
     return file_paths
+
+def check_RAM_usage(max_percentage: int or float = params['max_RAM_usage'], callback=lambda: None):
+    assert 100 >= max_percentage >= 0
+    ram_usage = psutil.virtual_memory().percent
+
+    if ram_usage > max_percentage:
+        callback()
+        notification = f'TRAINING INTERRUPTED\nThreshold ram_usage exceeded:{ram_usage}%'
+        notifications.notify_telegram(notification)
+        raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')

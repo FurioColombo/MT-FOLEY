@@ -1,7 +1,8 @@
 params = {
 
     # --- GPU ---
-    'CUDA_VISIBLE_DEVICES': "0,1",
+    'CUDA_VISIBLE_DEVICES':         "0,1",
+    'max_RAM_usage':                85,
 
     # --- Data --- : provide lists of folders that contain .wav files
     'train_dirs':                   ['./DCASE_2023_Challenge_Task_7_Dataset/train.txt'],
@@ -13,7 +14,7 @@ params = {
     'n_workers':                    8,
     
     # --- Model ---
-    'model_dir':                   'logs_tfoley_mamba_fast',
+    'model_dir':                   'test',
     'sequential':                  'mamba',
     'factors':                     [2,2,3,3,5,5,7],
     'dims':                        [32,64,128,128,256,256,512,512],
@@ -35,7 +36,7 @@ params = {
     'scheduler_patience_epoch':    25,
     'scheduler_factor':            0.8,
     'scheduler_threshold':         0.001,
-    'n_epochs':                    500, # todo: change this!
+    'n_epochs':                    500,
 
     # --- Logging ---
     'checkpoint_id':               None,

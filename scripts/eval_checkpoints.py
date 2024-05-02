@@ -1,21 +1,21 @@
 from pathlib import Path
 import argparse
-import psutil
 import json
 import csv
 import sys
-import re
 import gc
 import os
 
 import torch
 
+
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from model.tfmodel import UNet
-from model.sampler import SDESampling_batch, SDESampling
+from model.sampler import SDESampling
 from model.sde import VpSdeCos
 from data.dataset import from_path as dataset_from_path
 from eval.checkpoint_eval import CheckpointEvaluator
+from utilities import check_RAM_usage
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -95,7 +95,7 @@ def main(args, params):
         sde = VpSdeCos()
 
         for path in checkpoints_paths:
-            _check_RAM_usage()
+            check_RAM_usage()
             step = get_step_from_checkpoint_path(path)
 
             if int(step) >= args.start_step:
