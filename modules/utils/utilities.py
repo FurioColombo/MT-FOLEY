@@ -12,7 +12,7 @@ from torchaudio.transforms import MelSpectrogram, Resample
 from scipy.signal import ellip, filtfilt, firwin, lfilter
 
 from params.params import params
-from utils import notifications
+from modules.utils import notifications
 
 
 # --- Preprocess Event ---

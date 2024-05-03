@@ -3,7 +3,8 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import einsum, nn
-from model.mamba_block import MambaBlock
+
+from modules.model.mamba_block import MambaBlock
 
 # --- Helper Utils ---
 def exists(x):

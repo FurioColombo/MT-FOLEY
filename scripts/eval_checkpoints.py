@@ -13,7 +13,7 @@ sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from model.tfmodel import UNet
 from model.sampler import SDESampling
 from model.sde import VpSdeCos
-from data.dataset import from_path as dataset_from_path
+from utils.data_sources import dataset_from_path
 from eval.checkpoint_eval import CheckpointEvaluator
 from utilities import check_RAM_usage
 

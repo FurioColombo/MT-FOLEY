@@ -10,7 +10,7 @@ import torchaudio as tAudio
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from eval.sample_generator import SampleGenerator
-from utilities import check_RAM_usage
+from utils.utilities import check_RAM_usage
 
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
@@ -46,11 +46,12 @@ def main(args):
         device=device,
     )
 
-    for path in tqdm(checkpoints_paths, desc=f"checkpoints inference:"):
+    for path in tqdm(checkpoints_paths, desc=f"checkpoints inference"):
         check_RAM_usage()
         gen.make_inference(
             args=args,
             checkpoint_path=path,
+            same_class_conditioning=args.same_class_conditioning
         )
 
 def validate_args(args):
@@ -67,10 +68,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--checkpoints_path', '-c', type=str, required=True, help="Path to the folder containing model checkpoints.")
     parser.add_argument('--param_path', '-p', type=str, default='./pretrained/params.json')
-    parser.add_argument('--target_audio_path', type=str, help='Path to the target audio file.', default=None)
+    parser.add_argument('--target_audio_path', '-t', type=str, help='Path to the target audio file.', default=None)
     parser.add_argument('--gen_all_classes', '-a', type=bool, help='Generate audio samples from all classes', default=True)
     parser.add_argument('--class_name', type=str, help='Class name to generate samples.', choices=LABELS, default=None)
     parser.add_argument('--output_dir', '-o', type=str, default="./checkpoints_results")
+    parser.add_argument('--same_class_conditioning', '-s', type=bool, default=False)
     parser.add_argument('--cond_scale', type=int, default=3)
     parser.add_argument('--N', type=int, default=3)
     parser.add_argument('--stereo', action='store_true',

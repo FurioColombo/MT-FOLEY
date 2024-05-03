@@ -13,7 +13,7 @@ from utils.utilities import get_files_in_dir, plot_env
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 def main(args):
-    if args.output_dir is not None:
+    if args.output_dir is not None and not args.output_dir.lower().endswith(('.png', '.jpg', '.jpeg')):
         os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
     assert os.path.isdir(args.wav_path) or os.path.isfile(args.wav_path)
@@ -45,7 +45,6 @@ def main(args):
             os.makedirs(os.path.join(args.wav_path, img_dir_name), exist_ok=True)
             img_filepath = os.path.join(os.path.dirname(path), img_dir_name, img_filename)
         else:
-            os.makedirs(args.output_dir, exist_ok=True)
             img_filepath = args.output_dir
         plt.savefig(img_filepath)
         plt.close()

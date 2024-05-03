@@ -8,7 +8,7 @@ from torch.multiprocessing import spawn
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
 from params.params import params
-from train.learner import train, train_distributed
+from modules.train.learner import train, train_distributed
 
 def _get_free_port():
     import socketserver

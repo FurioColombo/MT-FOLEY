@@ -7,7 +7,7 @@ import sys
 import os
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
-from data.dataset import parse_filelist
+from utils.data_sources import parse_filelist
 from params.params import params
 from utils.utilities import get_event_cond
 

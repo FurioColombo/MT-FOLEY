@@ -1,12 +1,11 @@
 import os.path
 from pathlib import Path
 
-import random
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.utilities import plot_env, normalize, high_pass_filter, get_event_cond
+from modules.utils.utilities import plot_env, normalize, high_pass_filter, get_event_cond
 
 class CheckpointEvaluator:
     def __init__(self, test_set, labels:list, audio_length: int, device, writer_dir:str or Path, sampler=None, event_type='rms'):
