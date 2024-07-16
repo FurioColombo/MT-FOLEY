@@ -131,7 +131,7 @@ class Learner:
 
         # End of epoch stuff
         if self.is_master:
-            if self.epoch % self.params.logging.n_epochs_to_log == 0 and self.training.epoch > 0:
+            if self.epoch % self.params.logging.n_epochs_to_log == 0 and self.epoch > 0:
                 # Summary writer full inference
                 self._write_inference_summary(self.step, device)
                 notification = f'EPOCH {self.epoch} - step {self.step}' \
