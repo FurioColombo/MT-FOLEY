@@ -18,7 +18,7 @@ from modules.utils.notifications import notify_telegram
 '''
 Usage example:
  
-python ./scripts/inference/inference_multi_checkpoints.py \
+python ./scripts/python/inference/inference_multi_checkpoints.py \
     -m logs/mamba_fast/epoch-500_step-637037.pt \
     -p logs/mamba_fast/params.json \
     -a True \

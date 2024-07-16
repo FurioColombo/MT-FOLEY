@@ -24,7 +24,7 @@ LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'R
 '''
 Usage example:
 
-python ./scripts/inference/inference.py \
+python ./scripts/python/inference/inference.py \
     -m pretrained/block-49_epoch-500.pt \
     -p pretrained/params.json \
     -c DogBark \
@@ -107,9 +107,10 @@ def main(args):
     T.set_audio_backend('sox_io')
     device = torch.device('cuda')
 
-    params = load_json_config(ProjectPaths().config_file)
+    with open(args.param_path) as f:
+        params = json.load(f)
+    sample_rate = params['sample_rate']
 
-    sample_rate = params.data.sample_rate
     audio_length = sample_rate * 4
     model = UNet(len(LABELS), params).to(device)
     model = load_ema_weights(model, args.model_path)
@@ -123,7 +124,7 @@ def main(args):
         if sr != sample_rate:
             target_audio = resample_audio(target_audio, sr, sample_rate)
         target_audio = adjust_audio_length(target_audio, audio_length)
-        target_event = get_event_cond(target_audio, params.condition.event_type)
+        target_event = get_event_cond(target_audio, params['event_type'])
         target_event = target_event.repeat(args.N, 1).to(device)
     else:
         target_audio = None
@@ -161,7 +162,7 @@ def main(args):
         if args.target_audio_path is not None:
             dists = []
             for sample in generated:
-                dist = measure_el1_distance(sample, target_audio, params.condition.event_type)
+                dist = measure_el1_distance(sample, target_audio, params['event_type'])
                 dists.append(dist)
             print(f"E-L1 distance: {np.mean(dists)}")
 
