@@ -16,7 +16,7 @@ from modules.model.tfmodel import UNet
 from modules.model.sampler import SDESampling_batch
 from modules.model.sde import VpSdeCos
 from modules.utils.audio import adjust_audio_length, get_event_cond, high_pass_filter, resample_audio
-from modules.utils.utilities import normalize, load_json_config
+from modules.utils.utilities import normalize, load_json_config, dict_to_namespace
 from modules.utils.file_system import ProjectPaths
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
@@ -109,7 +109,9 @@ def main(args):
 
     with open(args.param_path) as f:
         params = json.load(f)
-    sample_rate = params['sample_rate']
+
+    params = dict_to_namespace(params)
+    sample_rate = params.audio.sample_rate
 
     audio_length = sample_rate * 4
     model = UNet(len(LABELS), params).to(device)
@@ -124,7 +126,7 @@ def main(args):
         if sr != sample_rate:
             target_audio = resample_audio(target_audio, sr, sample_rate)
         target_audio = adjust_audio_length(target_audio, audio_length)
-        target_event = get_event_cond(target_audio, params['event_type'])
+        target_event = get_event_cond(target_audio, params.condition.event_type)
         target_event = target_event.repeat(args.N, 1).to(device)
     else:
         target_audio = None
@@ -162,7 +164,7 @@ def main(args):
         if args.target_audio_path is not None:
             dists = []
             for sample in generated:
-                dist = measure_el1_distance(sample, target_audio, params['event_type'])
+                dist = measure_el1_distance(sample, target_audio, params.condition.event_type)
                 dists.append(dist)
             print(f"E-L1 distance: {np.mean(dists)}")
 

@@ -10,6 +10,7 @@ from torchsummary import summary
 
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
 from modules.model.tfmodel import UNet
+from modules.utils.utilities import dict_to_namespace
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
 
@@ -28,6 +29,7 @@ def main(args):
 
     with open(args.param_path) as f:
         params = json.load(f)
+    params = dict_to_namespace(params)
     model = UNet(len(LABELS), params).to(device)
 
     summary(model, depth=args.depth)
