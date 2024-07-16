@@ -79,16 +79,18 @@ To train the T-Foley model, follow these steps:
     
     If you use other dataset, prepare file path list of your training data as .txt format and configure to `params.py`.
 
-(optional - not recommended)
-   If you wish to load the conditioning from file instead of computing it on the go:
-   - Run:
-   ```bash
-   $ python scripts/python/dataset/create_cond_dataset.py
-   ``` 
+   (optional - not recommended)
+      If you wish to load the conditioning from file instead of computing it on the go:
+      - Run:
+      ```bash
+      $ python scripts/python/dataset/create_cond_dataset.py
+      ``` 
 
-2. Run the training:
+2. Setup you `config.json` file
+
+3. Run the training:
     ```bash
-    $ python scripts/python/training/train.py
+    $ python scripts/python/training/train_model.py
     ```
 
     This will start the training process and save the trained model weights in the `logs/` directory.
