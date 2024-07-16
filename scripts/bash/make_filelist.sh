@@ -10,4 +10,4 @@ find "$BASE_DIR_DEV" -type f > "../../DCASE_2023_Challenge_Task_7_Dataset/train.
 
 # Generate file list for evaluation
 find "$BASE_DIR_EVAL" -type f > "../../DCASE_2023_Challenge_Task_7_Dataset/eval.txt"
-echo "Filelists are created in the da><taset directory."
+echo "Filelists are created in the dataset directory."
