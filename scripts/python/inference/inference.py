@@ -11,7 +11,7 @@ import soundfile as sf
 from scipy.io.wavfile import write
 
 
-sys.path.append(str(Path(__file__).parent.parent.absolute()))
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
 from modules.model.tfmodel import UNet
 from modules.model.sampler import SDESampling_batch
 from modules.model.sde import VpSdeCos
