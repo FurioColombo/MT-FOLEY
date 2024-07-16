@@ -34,6 +34,7 @@ To get started, please prepare the codes and python environment.
     ```
 
 
+
 ## Dataset
 
 To train and evaluate our model, we used [DCASE 2023 Challenge Task 7](https://zenodo.org/records/8091972) which was constructed for Foley Sound Synthesis.
@@ -86,7 +87,8 @@ To train the T-Foley model, follow these steps:
       $ python scripts/python/dataset/create_cond_dataset.py
       ``` 
 
-2. Setup you `config.json` file
+2. Create or modify your own `config/config.json` file. You should copy the available `config/config.json.sample` file and use it as template for your own.
+   The config file let's you choose different configurations for the model's training
 
 3. Run the training:
     ```bash
