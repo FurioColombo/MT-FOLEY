@@ -41,31 +41,6 @@ To train and evaluate our model, we used [DCASE 2023 Challenge Task 7](https://z
 To evaluate our mode, we used the [subsets](https://yoonjinxd.github.io/Event-guided_FSS_Demo.github.io/#-vocal-imitating-dataset) of [VocalImitationSet](https://zenodo.org/records/1340763) and [VocalSketch](https://zenodo.org/records/1251982). These vocal imitating sets consist of vocal audios that mimick event-based or environmental sounds.
 Click the link above links to download the corresponding datasets.
 
-
-## Inference
-
-To perform inference using our model, follow these steps:
-
-1. Download the pre-trained model weights and configurations from the following link: [prertrained.zip](https://zenodo.org/records/10826692).
-    ```bash
-    $ wget https://zenodo.org/records/10826692/files/pretrained.zip
-    ```
-
-2. Unzip and place the downloaded model weights and config json file in the `./pretrained` directory.
-    ```bash
-    $ unzip pretrained.zip
-    ```
-
-3. Run the inference script by executing the following command:
-    ```bash
-    $ python inference.py --class_name "DogBark"
-    ```
-
-    The class_name **must be** one of the class name of [2023 DCASE Task7 dataset](https://dcase.community/challenge2023/task-foley-sound-synthesis). The list of the class name: `"DogBark", "Footstep", "GunShot", "Keyboard", "MovingMotorVehicle", "Rain", "Sneeze_Cough"`
-
-4. The generated samples would be saved in the `./results` directory.
-
-
 ## Training
 
 To train the T-Foley model, follow these steps:
