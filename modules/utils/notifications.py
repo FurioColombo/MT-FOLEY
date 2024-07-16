@@ -2,7 +2,7 @@ import requests
 from config.config import Config
 
 def notify_telegram(message, verbose=False):
-    config = Config.get_telegram_config()
+    config = Config.get_config().telegram
     apiToken = config.apiToken
     chatID = config.chatID
     if apiToken is str and chatID is str:
