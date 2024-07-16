@@ -111,7 +111,7 @@ def main(args):
         params = json.load(f)
 
     params = dict_to_namespace(params)
-    sample_rate = params.audio.sample_rate
+    sample_rate = params.data.sample_rate
 
     audio_length = sample_rate * 4
     model = UNet(len(LABELS), params).to(device)
