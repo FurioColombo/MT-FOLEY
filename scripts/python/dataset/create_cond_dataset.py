@@ -20,7 +20,8 @@ def create_cond_files_from_txt(paths_files, params):
 
     # for each file containing paths:
     for paths_file in paths_files:
-        print('paths_file', paths_file)
+        paths_file = os.path.join(ProjectPaths.base_dir, paths_file)
+        print('paths_file:', os.path.abspath(paths_file))
         audio_paths = parse_filelist(paths_file)
 
         # open/create txt file for storing paths
@@ -51,8 +52,8 @@ def create_cond_files_from_txt(paths_files, params):
                 # save conditioning file .pt
                 cond_file_name = audio_path.stem + '.pt'
                 cond_path = os.path.join(cond_folder_path, cond_file_name)
-                #torch.save(cond, cond_path)
-                #f.write(f'{cond_path}\n')
+                torch.save(cond, cond_path)
+                f.write(f'{cond_path}\n')
 
 
 config = load_json_config(ProjectPaths().config_file)

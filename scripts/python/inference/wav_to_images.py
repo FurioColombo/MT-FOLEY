@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
-from utils.audio import get_files_in_dir
+from modules.utils.file_system import get_files_in_dir
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 def main(args):

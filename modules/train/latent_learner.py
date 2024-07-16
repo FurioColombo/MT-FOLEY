@@ -5,7 +5,6 @@ from glob import glob
 
 import torch
 import torch.nn as nn
-from einops import rearrange
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 from torchaudio.transforms import Resample

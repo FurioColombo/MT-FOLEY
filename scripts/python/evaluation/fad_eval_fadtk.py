@@ -6,6 +6,12 @@ from fadtk import FrechetAudioDistance, log
 from .model_loader import get_all_models
 from .fad_batch import cache_embedding_files
 
+""" 
+TODO: fix
+This is not the FAD library we currently us for evluation and the script is at teh current moment unusable
+"""
+
+
 def main():
     """
     Launcher for running FAD on two directories using a model.

@@ -1,13 +1,16 @@
 import os
 import sys
 from pathlib import Path
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
+from config.config import Config
+
+# set gpu to use
+os.environ["CUDA_VISIBLE_DEVICES"] = Config.get_config().CUDA_VISIBLE_DEVICES
 
 from torch.cuda import device_count
 from torch.multiprocessing import spawn
 
-sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
-from config.config import Config
+# set learner to use - switch between audio and latent configurations
 if Config.get_config().model.use_latent:
     from modules.train.latent_learner import train, train_distributed
 else:
@@ -15,7 +18,6 @@ else:
 
 def _get_free_port():
     import socketserver
-
     with socketserver.TCPServer(("localhost", 0), None) as s:
         return s.server_address[1]
 

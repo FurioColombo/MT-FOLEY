@@ -9,9 +9,11 @@ import sys
 import torch
 import torchaudio as tAudio
 
+
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
 from modules.eval.sample_generator import SampleGenerator
-from modules.utils.utilities import check_RAM_usage
+from modules.utils.utilities import check_RAM_usage, load_json_config
+from modules.utils.file_system import ProjectPaths
 from modules.utils.notifications import notify_telegram
 '''
 Usage example:
@@ -38,6 +40,8 @@ def prepare_machine():
     tAudio.set_audio_backend('sox_io')
 
 def main(args):
+    config = load_json_config(ProjectPaths().config_file)
+
     prepare_machine()
     os.makedirs(args.output_dir, exist_ok=True)
 
@@ -59,7 +63,7 @@ def main(args):
     )
 
     for path in tqdm(checkpoints_paths, desc=f"checkpoints inference"):
-        check_RAM_usage()
+        check_RAM_usage(config.max_RAM_usage)
         gen.make_inference(
             args=args,
             checkpoint_path=path,
@@ -75,8 +79,8 @@ def validate_args(args):
         assert args.class_names is None, "if all classes are being generated, no specific one should be set"
 
     if args.target_audio_path is None:
-       # todo: implement this logging.warning('WARNING: generating without conditioning')
-        pass
+       # todo: implement this
+       logging.warning('WARNING: generating without conditioning')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,16 @@
+"""
+USAGE EXAMPLE:
+from terminal in root folder:
+
+python scripts/python/evaluation/eval_checkpoints.py
+    -c your/model/checkpoint/path/***.pt
+    -p your/model/checkpoint/params.json
+    -o ./eval/results/folder
+
+"""
+
 from pathlib import Path
 import argparse
-import json
 import csv
 import sys
 import gc
@@ -8,14 +18,14 @@ import os
 
 import torch
 
-
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
 from modules.model.tfmodel import UNet
 from modules.model.sampler import SDESampling
 from modules.model.sde import VpSdeCos
 from modules.utils.data_sources import dataset_from_path
+from modules.utils.file_system import ProjectPaths
 from modules.eval.checkpoint_eval import CheckpointEvaluator
-from modules.utils.utilities import check_RAM_usage
+from modules.utils.utilities import check_RAM_usage, load_json_config
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
@@ -68,16 +78,16 @@ def main(args, params):
 
     device = torch.device('cuda')
 
-    test_set = dataset_from_path(params['test_dirs'], params, LABELS, cond_dirs=params['test_cond_dirs'])
-    print('test set paths dir:', params['test_dirs'])
+    test_set = dataset_from_path(params.data.test_dirs, params, LABELS, cond_dirs=params.data.test_cond_dirs)
+    print('test set paths dir:', params.data.test_dirs)
     checkpoint_eval = CheckpointEvaluator(
         test_set=test_set,
         labels=LABELS,
         sampler=None,
         device=device,
-        audio_length=params['audio_length'],
+        audio_length=params.data.audio_length,
         writer_dir=os.path.abspath(args.output_dir),
-        event_type=params['event_type']
+        event_type=params.condition.event_type
     )
 
     # open the file in the write mode
@@ -93,7 +103,7 @@ def main(args, params):
         sde = VpSdeCos()
 
         for path in checkpoints_paths:
-            check_RAM_usage()
+            check_RAM_usage(85)
             step = get_step_from_checkpoint_path(path)
 
             if int(step) >= args.start_step:
@@ -127,7 +137,5 @@ if __name__ == '__main__':
     parser.add_argument('--start_step', '-s', default=0, type=int)
     args = parser.parse_args()
 
-    with open(args.param_path) as f:
-        params = json.load(f)
-
-    main(args, params)
+    config = load_json_config(ProjectPaths().config_file)
+    main(args, config)

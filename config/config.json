@@ -3,7 +3,7 @@
   "max_RAM_usage": 85,
 
   "data": {
-    "train_dirs": ["./DCASE_2023_Challenge_Task_7_Dataset/eval.txt"],
+    "train_dirs": ["./DCASE_2023_Challenge_Task_7_Dataset/train.txt"],
     "train_cond_dirs": null,
     "test_dirs": ["./DCASE_2023_Challenge_Task_7_Dataset/eval.txt"],
     "test_cond_dirs": null,
