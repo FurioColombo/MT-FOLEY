@@ -16,6 +16,7 @@ from modules.model.sde import VpSdeCos
 from modules.utils.data_sources import dataset_from_path
 from modules.utils.audio import adjust_audio_length, get_event_cond, high_pass_filter, resample_audio
 from modules.utils.utilities import normalize, check_RAM_usage
+from config.config import Config
 
 def load_ema_weights(model, model_path):
     checkpoint = torch.load(model_path)
@@ -93,11 +94,10 @@ class SampleGenerator:
         self.cond_type = cond_type
 
         # load params
-        with open(args.param_path) as f:
-            self.params = json.load(f)
-        self.sample_rate = self.params['sample_rate']
+        self.params = Config.get_config()
+        self.sample_rate = self.params.audio.sample_rate
         self.audio_length = self.sample_rate * 4
-        self.event_conditioning = self.params['event_type']
+        self.event_conditioning = self.params.condition.event_type
 
         self.target_audio = None
         self.target_event = None
@@ -122,7 +122,7 @@ class SampleGenerator:
             class_indices = [self.labels.index(class_i) for class_i in class_names]
 
         if same_class_conditioning:
-            test_cond_dirs = self.params.get('test_cond_dirs')
+            test_cond_dirs = self.params.data.test_cond_dirs
             self.test_set = dataset_from_path(self.params.data.test_dirs, self.params, self.labels, cond_dirs=test_cond_dirs)
 
         self._generate_samples(
@@ -135,12 +135,14 @@ class SampleGenerator:
         print('Done!')
 
         # Measure E-L1 distance if target audio is given
+        '''
         if args.target_audio_path is not None:
             dists = []
             for sample in generated:
-                dist = measure_el1_distance(sample, self.target_audio, self.params.event_type)
+                dist = measure_el1_distance(sample, self.target_audio, self.params.condition.event_type)
                 dists.append(dist)
             print(f"E-L1 distance: {np.mean(dists)}")
+        '''
 
     def _generate_samples(self, class_indices:list, sampler, cond_scale, checkpoint_path, same_class_conditioning: False, target_audio_path=None):
         assert (same_class_conditioning and target_audio_path is not None) is False
@@ -243,7 +245,7 @@ class SampleGenerator:
             if sr != self.sample_rate:
                 target_audio = resample_audio(target_audio, sr, self.sample_rate)
             self.target_audio = adjust_audio_length(target_audio, self.audio_length)
-            self.target_event = get_event_cond(target_audio, self.params.event_type)
+            self.target_event = get_event_cond(target_audio, self.params.condition.event_type)
             self.target_event = self.target_event.repeat(self.n_gen_samples_per_class, 1).to(self.device)
 
     def remove_conditioning(self):
