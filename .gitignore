@@ -7,8 +7,18 @@ DCASE_2023_Challenge_Task_7_Dataset/
 logs_tfoley_lstm/
 logs_tfoley_lstm_og/
 logs_tfoley_mamba/
+logs_tfoley_mamba_fast/
+
+eval_checkpoints_tfoley_lstm_og/
+
+
+checkpoints_results/
+checkpoints_res_test_mamba/
+
+res_audio_checkpoints_lstm_og/
 retrained_tfoley_results/
 
-l.py
-mt_learner.py
-test.py
+.wav
+.pt
+.iml
+__pychache__/

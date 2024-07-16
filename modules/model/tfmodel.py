@@ -3,8 +3,8 @@ import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from torch import einsum, nn
-from mamba_block import MambaBlock
 
+from modules.model.mamba_block import MambaBlock
 
 # --- Helper Utils ---
 def exists(x):
@@ -402,21 +402,20 @@ class UNet(nn.Module):
         print("Model initializing... This can take a few minutes.")
 
         # Hyperparameter Settings
-        sequential = params['sequential']
+        sequential = params.model.sequential
         assert sequential in ['lstm', 'attn', 'mamba',
                               None], "Choose sequential between \'lstm\' or \'attn\' or \'mamba\', None."
 
-        dims = params['dims']
-        factors = params['factors']
+        dims = params.model.dims
+        factors = params.model.factors
         assert len(dims) - 1 == len(factors)
 
-        block_nums = params['block_nums']
-        time_emb_dim = params['time_emb_dim']
-        class_emb_dim = params['class_emb_dim']
-        event_dim = params['event_dims'][params['event_type']]
-
-        cond_drop_prob = params['cond_prob']
-        film_type = params['film_type']
+        block_nums = params.condition.block_nums
+        time_emb_dim = params.condition.time_emb_dim
+        class_emb_dim = params.condition.class_emb_dim
+        event_dim = vars(params.condition.event_dims)[params.condition.event_type]
+        cond_drop_prob = params.condition.cond_prob
+        film_type = params.condition.film_type
 
         # Pre-conv/emb Layers
         self.conv_1 = Conv1d(1, dims[0], 5, padding=2)
@@ -437,7 +436,7 @@ class UNet(nn.Module):
         # Bottleneck layer
         self.sequential = sequential
         if sequential:
-            self.mid_dim = params['mid_dim']
+            self.mid_dim = params.condition.mid_dim
             if sequential == 'lstm':
                 self.lstm = nn.LSTM(input_size=self.mid_dim, hidden_size=self.mid_dim, num_layers=2, batch_first=True, bidirectional=True)
                 self.lstm_mlp = nn.Sequential(
@@ -469,7 +468,6 @@ class UNet(nn.Module):
             nn.SiLU(),
             nn.Linear(classes_dim, class_emb_dim)
         )
-
         print("Model successfully initialized!")
 
     def forward(self, audio, sigma, classes, events, cond_drop_prob=None):
