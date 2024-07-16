@@ -6,8 +6,6 @@ import json
 from torchaudio.transforms import MelSpectrogram
 import numpy as np
 import torch
-
-from modules.utils import notifications
 from modules.utils.file_system import ProjectPaths
 
 
@@ -93,6 +91,7 @@ def check_nan(t:torch.Tensor, error_msg:str):
 
 
 def check_RAM_usage(max_percentage: int or float or None, callback=lambda: None):
+    from modules.utils import notifications
     if max_percentage is None:
         config = load_json_config(ProjectPaths.config_file)
         max_percentage = config.max_RAM_usage
