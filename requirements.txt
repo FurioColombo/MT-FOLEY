@@ -1,11 +1,15 @@
+torchlibrosa==0.1.0
+args==0.1.0
+descript-audiotools==0.7.2
 einops==0.7.0
 ffmpeg==1.4
+frechet_audio_distance==0.3.1
 librosa==0.10.1
 llvmlite==0.41.1
 matplotlib==3.7.5
-numpy==1.24.4
+numpy==1.23.4
 pillow==10.2.0
-protobuf==4.25.3
+protobuf==3.19.6
 pydub==0.25.1
 pyparsing
 python-dateutil==2.9.0.post0
@@ -17,9 +21,10 @@ tqdm==4.66.2
 typing_extensions==4.10.0
 urllib3==2.2.1
 mamba-ssm==1.2.0
-triton==2.1.0
+triton==2.2.0
 encodec==0.1.1
-# descript-audio-codec==1.0.0
+# .dac may cause compatibility problems
+descript-audio-codec==1.0.0
 
 # Common utils
 torch-summary==1.4.5
