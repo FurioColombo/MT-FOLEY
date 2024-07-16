@@ -21,6 +21,15 @@ from modules.utils.file_system import ProjectPaths
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
+'''
+Usage example:
+
+python ./scripts/inference/inference.py \
+    -m pretrained/block-49_epoch-500.pt \
+    -p pretrained/params.json \
+    -c DogBark \
+    -o results/
+'''
 
 def load_ema_weights(model, model_path):
     checkpoint = torch.load(model_path)
