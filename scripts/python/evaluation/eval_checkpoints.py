@@ -9,17 +9,15 @@ import os
 import torch
 
 
-sys.path.append(str(Path(__file__).parent.parent.absolute()))
-from model.tfmodel import UNet
-from model.sampler import SDESampling
-from model.sde import VpSdeCos
-from utils.data_sources import dataset_from_path
-from eval.checkpoint_eval import CheckpointEvaluator
-from utilities import check_RAM_usage
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
+from modules.model.tfmodel import UNet
+from modules.model.sampler import SDESampling
+from modules.model.sde import VpSdeCos
+from modules.utils.data_sources import dataset_from_path
+from modules.eval.checkpoint_eval import CheckpointEvaluator
+from modules.utils.utilities import check_RAM_usage
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
-
-
 
 
 def list_checkpoint_paths_in_dir(dir: str or Path, sort_paths: bool=True):

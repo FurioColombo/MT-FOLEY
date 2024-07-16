@@ -48,6 +48,7 @@ class VpSdeCos(SDE):
 
 class SubVpSdeCos(SDE):
     def __init__(self):
+        super().__init__()
         self.t_min = 0.006
         self.t_max = 1 - 0.006
 

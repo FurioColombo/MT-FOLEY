@@ -1,3 +1,4 @@
+import logging
 import random
 import csv
 import os
@@ -36,14 +37,13 @@ def parse_filelist(filelist_path):
             f.close()
         return filelist
 
-
-
 class AbstractAudioDataset(Dataset):
     def __init__(self, params, labels):
         super().__init__()
-        self.audio_length = params['audio_length']
+        self.audio_length = params.data.audio_length
         self.labels = labels
-        self.event_type = params['event_type']
+        self.event_type = params.condition.event_type
+        self.sample_rate = params.data.sample_rate
 
     def __len__(self):
         raise NotImplementedError("AbstractAudioDataset is an abstract class.")
@@ -67,8 +67,8 @@ class AbstractAudioDataset(Dataset):
 
     def get_random_sample_from_class(self, class_idx):
         random_sample = self.get_random_sample()
-        print(random_sample['class'].item(), ' - ', class_idx)
+        logging.debug(random_sample['class'].item(), ' - ', class_idx)
         while random_sample['class'].item() is not class_idx:
             random_sample = self.get_random_sample()
-            print(random_sample['class'].item(), ' - ', class_idx)
+            logging.debug(random_sample['class'].item(), ' - ', class_idx)
         return random_sample

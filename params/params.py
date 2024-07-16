@@ -1,5 +1,4 @@
 params = {
-
     # --- GPU ---
     'CUDA_VISIBLE_DEVICES':         "0,1",
     'max_RAM_usage':                85,
@@ -14,10 +13,13 @@ params = {
     'n_workers':                    8,
     
     # --- Model ---
-    'model_dir':                   'test',
-    'sequential':                  'mamba',
-    'factors':                     [2,2,3,3,5,5,7],
-    'dims':                        [32,64,128,128,256,256,512,512],
+    'model_dir':                   'test_debug',
+    'sequential':                  'mamba',                          # original architecture
+    'factors':                     [2, 2, 3, 5, 5],                 # [2,2,3,3,5,5,7],
+    'dims':                        [32, 64, 128, 256, 512, 512],   # [32,64,128,128,256,256,512,512],
+
+    # --- Codec ---
+    'codec':                       'encodec', # supported codecs: `codec`, `dac`
 
     # --- Condition ---
     'time_emb_dim':                512,
@@ -40,10 +42,10 @@ params = {
 
     # --- Logging ---
     'checkpoint_id':               None,
-    'n_epochs_to_checkpoint':      10,
-    'n_epochs_to_log':             10,
-    'n_steps_to_log':              1000,
-    'n_steps_to_test':             1000,
+    'n_epochs_to_checkpoint':      25,
+    'n_epochs_to_log':             25,
+    'n_steps_to_log':              125,
+    'n_steps_to_test':             125,
     'n_bins':                      5,
 
     # --- Profiler ---

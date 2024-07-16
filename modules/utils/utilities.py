@@ -1,74 +1,37 @@
-from pathlib import Path
-import os.path
-import psutil
-
-
-import librosa
+from types import SimpleNamespace
 import matplotlib.pyplot as plt
+import psutil
+import json
+
+from torchaudio.transforms import MelSpectrogram
 import numpy as np
 import torch
-from torchaudio.transforms import MelSpectrogram, Resample
 
-from scipy.signal import ellip, filtfilt, firwin, lfilter
-
-from params.params import params
 from modules.utils import notifications
+from modules.utils.file_system import ProjectPaths
 
 
-# --- Preprocess Event ---
-def get_event_cond(x, event_type='rms'):
-    assert event_type in ['rms', 'power', 'onset']
-    if event_type == 'rms':
-        return get_rms(x)
-    if event_type == 'power':
-        return get_power(x)
-    if event_type == 'onset':
-        return get_onset(x)
-    
-def get_rms(signal):
-    rms = librosa.feature.rms(y=signal, frame_length=512, hop_length=128)
-    rms = rms[0]
-    rms = zero_phased_filter(rms)
-    return torch.tensor(rms.copy(), dtype=torch.float32)
-
-def get_power(signal):
-    if torch.is_tensor(signal):
-        signal_copy_grad = signal.clone().detach().requires_grad_(signal.requires_grad)
-        return signal_copy_grad*signal_copy_grad
-    else:
-        return torch.tensor(signal*signal, dtype=torch.float32)
-    
-def get_onset(y, sr=22050):
-    y = np.array(y)
-    o_env = librosa.onset.onset_strength(y=y, sr=sr, aggregate=np.median, fmax=8000, n_mels=256)
-    onset_frames = librosa.onset.onset_detect(onset_envelope=o_env, sr=sr, normalize=True, delta=0.3, units='samples')
-    onsets = np.zeros(y.shape)
-    onsets[onset_frames] = 1.0
-    return torch.tensor(onsets, dtype=torch.float32)
-
-def resample_audio(audio, original_sr, target_sr):
-    resampler = Resample(original_sr, target_sr, resampling_method='sinc_interpolation')
-    return resampler(audio)
-
-def adjust_audio_length(audio, length):
-    if audio.shape[1] >= length:
-        return audio[0, :length]
-    return torch.cat((audio[0, :], torch.zeros(length - audio.shape[1])), dim=-1)
-
-
-# --- Post-process Audio ---
+# --- Normalizations and Mappings ---
 def normalize(x):
     return x / torch.max(torch.abs(x)).item()
 
-def high_pass_filter(x, sr=22050):
-    b = firwin(101, cutoff=20, fs=sr, pass_zero='highpass')
-    x= lfilter(b, [1,0], x)
-    return x
-    
-def zero_phased_filter(x):
-    b, a = ellip(4, 0.01, 120, 0.125) 
-    x = filtfilt(b, a, x, method="gust")
-    return x
+
+def normalize_to_range(tensor, min_val, max_val):
+    # Find min and max values in the tensor
+    min_tensor = torch.min(tensor)
+    max_tensor = torch.max(tensor)
+
+    # Scale values to the range [0, 1]
+    normalized_tensor = (tensor - min_tensor) / (max_tensor - min_tensor)
+
+    # Scale values to the desired range [min_val, max_val]
+    scaled_tensor = normalized_tensor * (max_val - min_val) + min_val
+    return scaled_tensor
+
+def map_to_range(value, min_val, max_val, new_min, new_max):
+    normalized_value = (value - min_val) / (max_val - min_val)
+    scaled_value = normalized_value * (new_max - new_min) + new_min
+    return scaled_value
 
 def pooling(x, block_num=49):
     block_size = x.shape[-1] // block_num
@@ -87,7 +50,9 @@ def save_figure_to_numpy(fig):
     data = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
     data = data.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     return data
-    
+
+
+# =========== Plotting ===========
 def plot_spec(waveform, sample_rate):
     # Transform to mel-spec
     transform = MelSpectrogram(sample_rate)
@@ -119,21 +84,19 @@ def plot_env(waveform):
     plt.close()
     return data
 
+
+# =========== Common Sanity Checks ==========
+
 def check_nan(t:torch.Tensor, error_msg:str):
     if torch.isnan(t).any():
         raise RuntimeError(error_msg)
 
-def get_files_in_dir(path: str or Path, extension=None):
-    p = os.path.abspath(path)
-    assert os.path.isdir(p)
-    file_paths = [os.path.join(p, file) for file in os.listdir(p) if os.path.isfile(os.path.join(p, file))]
-    if extension is not None:
-        assert type(extension) is str
-        extension = extension.split('.')[-1]
-        file_paths = [f for f in file_paths if f.split('.')[-1] == extension]
-    return file_paths
 
-def check_RAM_usage(max_percentage: int or float = params['max_RAM_usage'], callback=lambda: None):
+def check_RAM_usage(max_percentage: int or float or None, callback=lambda: None):
+    if max_percentage is None:
+        config = load_json_config(ProjectPaths.config_file)
+        max_percentage = config.max_RAM_usage
+
     assert 100 >= max_percentage >= 0
     ram_usage = psutil.virtual_memory().percent
 
@@ -142,3 +105,26 @@ def check_RAM_usage(max_percentage: int or float = params['max_RAM_usage'], call
         notification = f'TRAINING INTERRUPTED\nThreshold ram_usage exceeded:{ram_usage}%'
         notifications.notify_telegram(notification)
         raise MemoryError('Threshold ram_usage exceeded:', ram_usage, '%')
+
+# ======= Config Utils =======
+def dict_to_namespace(d):
+    if isinstance(d, dict):
+        for key, value in d.items():
+            d[key] = dict_to_namespace(value)
+        return SimpleNamespace(**d)
+    elif isinstance(d, list):
+        return [dict_to_namespace(i) for i in d]
+    else:
+        return d
+
+def load_json_config(config_path):
+    with open(config_path, 'r') as f:
+        config_dict = json.load(f)
+    return dict_to_namespace(config_dict)
+
+# Define modular functions to extract specific sections
+def get_training_config(config):
+    return config.training
+
+def get_model_config(config):
+    return config.model

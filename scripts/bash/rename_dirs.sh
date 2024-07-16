@@ -1,7 +1,10 @@
 #!/bin/bash
+
 # Base directories
-BASE_DIR_DEV="./DCASE_2023_Challenge_Task_7_Dataset/dev"
-BASE_DIR_EVAL="./DCASE_2023_Challenge_Task_7_Dataset/eval"
+BASE_DIR=$(git rev-parse --show-toplevel)
+BASE_DIR_DEV="$BASE_DIR/DCASE_2023_Challenge_Task_7_Dataset/dev"
+BASE_DIR_EVAL="$BASE_DIR/DCASE_2023_Challenge_Task_7_Dataset/eval"
+
 # Function to rename directories
 rename_dirs() {
     local base_dir=$1

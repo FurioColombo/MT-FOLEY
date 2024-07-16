@@ -1,5 +1,5 @@
 from modules.data.dataset import AbstractAudioDataset, parse_filelist
-from modules.utils.utilities import get_event_cond
+from modules.utils.audio import get_event_cond
 
 class AudioDataset(AbstractAudioDataset):
     def __init__(self, paths, params, labels):

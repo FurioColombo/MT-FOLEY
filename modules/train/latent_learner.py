@@ -5,6 +5,7 @@ from glob import glob
 
 import torch
 import torch.nn as nn
+from einops import rearrange
 from torch.nn.parallel import DistributedDataParallel
 from torch.utils.tensorboard import SummaryWriter
 from torchaudio.transforms import Resample
@@ -13,8 +14,8 @@ from tqdm import tqdm
 from modules.model.codec.sources.encodecWrapper import Encodec
 from modules.model.codec.sources.dacWrapper import DAC
 from modules.utils import notifications
-from modules.utils.file_system import recursive_namespace_to_dict
 from modules.utils.data_sources import dataset_from_path
+from modules.utils.file_system import recursive_namespace_to_dict
 from modules.model.tfmodel import UNet
 from modules.model.sampler import SDESampling
 from modules.model.sde import SubVpSdeCos
@@ -22,7 +23,6 @@ from modules.utils.utilities import normalize, plot_env, check_nan, check_RAM_us
 from modules.utils.audio import get_event_cond, resample_audio
 
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
-
 
 def _nested_map(struct, map_fn):
     if isinstance(struct, tuple):
@@ -45,6 +45,7 @@ class Learner:
     def __init__(
         self, model_dir, model, codec:Encodec or DAC, train_set, test_set, params, device, distributed):
         os.makedirs(model_dir, exist_ok=True)
+        train_params = params.training
         self.model_dir = model_dir
         self.device = device
         self.is_master = True
@@ -55,8 +56,7 @@ class Learner:
         self.codec = codec
         self.ema_weights = [param.clone().detach()
                             for param in self.model.parameters()]
-        train_params = params.training
-        self.lr = train_params.lr
+        self.lr = params.training.lr
         self.epoch = 0
         self.step = 0
         self.valid_loss = None
@@ -148,18 +148,6 @@ class Learner:
             gc_collect()
         torch.cuda.empty_cache()
 
-    @torch.no_grad()
-    def val_step(self):
-        self.test_set_evaluation()
-
-        self.valid_loss = sum(self.sum_loss_in_bins_test) / sum(self.num_elems_in_bins_test)
-        self._update_best_val_loss(self.valid_loss)
-
-        self.scheduler.step(self.valid_loss)
-        self.lr = self.scheduler.get_last_lr()
-
-        self._write_test_summary(self.step)
-
     def train_step(self, features):
         for param in self.model.parameters():
             param.grad = None
@@ -168,23 +156,24 @@ class Learner:
         classes = features["class"]
         events = features["event"]
 
-        # TODO: this is temp
-        # audio = self._encode_audio(audio)
-        N, T = audio.shape
+        # codec: encode audio
+        audio_codes = self._encode_audio(audio, flatten=True)
+        batch_size, q = audio_codes.shape
 
-        t = torch.rand(N, 1, device=audio.device)
+        # diffusion noise
+        t = torch.rand(batch_size, 1, device=audio_codes.device)
         t = (self.sde.t_max - self.sde.t_min) * t + self.sde.t_min
-        noise = torch.randn_like(audio)
-
-        noisy_audio = self.sde.perturb(audio, t, noise)
+        noise = torch.randn_like(audio_codes)
+        noisy_audio = self.sde.perturb(audio_codes, t, noise)
         sigma = self.sde.sigma(t)
 
+        # predict
         predicted = self.model(noisy_audio, sigma, classes, events)
-        loss = self.loss_fn(noise, predicted)
 
+        # loss
+        loss = self.loss_fn(noise, predicted)
         loss.backward()
         grad_norm = torch.trunc(nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)).to(torch.int64)
-
         self.optimizer.step()
         if self.is_master:
             self.update_ema_weights()
@@ -194,11 +183,27 @@ class Learner:
 
         vectorial_loss = self.v_loss(noise, predicted).detach()
         vectorial_loss = torch.mean(vectorial_loss, 1)
-        vectorial_loss = torch.reshape(vectorial_loss, (-1, ))
+        vectorial_loss = torch.reshape(vectorial_loss, (-1,))
 
         self.update_conditioned_loss(vectorial_loss, t_detach, True)
         self.cum_grad_norms += grad_norm
         return loss
+
+    @torch.no_grad()
+    def val_step(self):
+        # eval on validation set
+        self.test_set_evaluation()
+
+        # losses
+        self.valid_loss = sum(self.sum_loss_in_bins_test) / sum(self.num_elems_in_bins_test)
+        self._update_best_val_loss(self.valid_loss)
+
+        # lr scheduler
+        self.scheduler.step(self.valid_loss)
+        self.lr = self.scheduler.get_last_lr()
+
+        # logging
+        self._write_test_summary(self.step)
 
     @torch.no_grad()
     # Test
@@ -211,19 +216,20 @@ class Learner:
 
             N, T = audio.shape
 
-            # TODO: this is temp
-            # print('audio val_step:', type(audio), audio.device)
-            # audio = self._encode_audio(audio)
-
+            # codec encoding
+            audio = self._encode_audio(audio)
+            # diffusion noise
             t = torch.rand(N, 1, device=audio.device)
             t = (self.sde.t_max - self.sde.t_min) * t + self.sde.t_min
             noise = torch.randn_like(audio)
             noisy_audio = self.sde.perturb(audio, t, noise)
             sigma = self.sde.sigma(t)
+
+            # predict
             predicted = self.model(noisy_audio, sigma, classes, events)
 
+            # losses
             vectorial_loss = self.v_loss(noise, predicted).detach()
-
             vectorial_loss = torch.mean(vectorial_loss, 1)
             vectorial_loss = torch.reshape(vectorial_loss, (-1, ))
             t = torch.reshape(t, (-1, ))
@@ -298,22 +304,22 @@ class Learner:
         self.summary_writer.add_image(f"test_sample/envelope", plot_env(test_feature["audio"]), step, dataformats='HWC')
 
         for class_idx in range(len(LABELS)):
-            noise = torch.randn(1, self.params.data.audio_length, device=device)
-            # codec compressed audio noise
-            # embedding_shape = self.codec.get_embedding_shape(batch_size=1)
-            # noise = torch.randn(1, embedding_shape[-1]*embedding_shape[-2], device=device) # TODO: remove hardcoded value
+            # noise = torch.randn(1, self.params.audio_length, device=device)
+            embedding_shape = self.codec.get_embedding_shape(batch_size=1)
+            noise = torch.randn(1, embedding_shape[-1]*embedding_shape[-2], device=device) # TODO: remove hardcoded value
 
             classes = torch.tensor([class_idx], device=device)
 
             sample = sampler.predict(noise, 100, classes, test_event, cond_scale=cond_scale)
             # sample = sample.flatten().cpu() # TODO: non latent version
 
-            # decode audio - todo: fix this temp?
-            # sample = self.codec.decode(sample, denormalize=False, unflatten=True, use_z=True)
+            # todo: fix this temp?
+            sample = self.codec.decode(sample, denormalize=False, unflatten=False, use_z=True)
 
             sample = normalize(sample)
             sample = resample_audio(sample, original_sr=24000, target_sr=22050, device=device) # todo: remove hardcoded
             sample = sample.squeeze().cpu()
+
             # sample = high_pass_filter(sample, sr=22050)
 
             event_loss.append(
@@ -330,8 +336,8 @@ class Learner:
 
     def log_params(self):
         with open(os.path.join(self.model_dir, 'params.json'), 'w') as fp:
-            params_dict = recursive_namespace_to_dict(self.params)
-            json.dump(params_dict, fp, indent=4)
+            dict_params = recursive_namespace_to_dict(self.params)
+            json.dump(dict_params, fp, indent=4)
         fp.close()
 
     def state_dict(self):
@@ -398,14 +404,14 @@ class Learner:
             self.best_val_loss = self.valid_loss
             self.save_to_checkpoint(filename=f'epoch-{self.epoch}')
 
-    def _encode_audio(self, audio): # todo: this?
+    def _encode_audio(self, audio, normalize_codes:bool=True, flatten: bool=True): # todo: this?
         original_sr = self.params.data.sample_rate
         target_sr = self.codec.get_sample_rate()
         resampler = Resample(original_sr, target_sr, resampling_method='sinc_interp_hann').to(self.device)
         audio = resampler(audio)
         audio = audio.unsqueeze(1)
-        codes, embedding =  self.codec.encode(audio, normalize_codes=True, return_embedding=True, flatten=False) # encode() requires audio with shape: (batch_size, channels, sequence_length)
-        return codes
+        codes, embedding =  self.codec.encode(audio, normalize_codes=normalize_codes, return_embedding=True, flatten=flatten) # encode() requires audio with shape: (batch_size, channels, sequence_length)
+        return embedding
 
 
 # --- Training functions ---
@@ -421,7 +427,7 @@ def _train_impl(replica_id, model, codec, train_set, test_set, params, device, d
         with torch.profiler.profile(
             schedule=torch.profiler.schedule(wait=profiler_params.wait, warmup=profiler_params.warmup,
                                              active=profiler_params.active, repeat=profiler_params.repeat),
-            on_trace_ready=torch.profiler.tensorboard_trace_handler(os.path.join(profiler_params.model_dir, 'tensorboard')),
+            on_trace_ready=torch.profiler.tensorboard_trace_handler(os.path.join(params.model.model_dir, 'tensorboard')),
             record_shapes=True,
             profile_memory=True,
             with_stack=False
@@ -435,8 +441,9 @@ def train(params):
     model = UNet(num_classes=len(LABELS), params=params).cuda()
     codec = Encodec(sample_rate=24000, device='cuda')  # TODO: get this from ocnstructor
     # codec = DAC(sample_rate=24000, device='cuda')
-    train_set = dataset_from_path(params.data.train_dirs, params, LABELS, cond_dirs=params.data.train_cond_dirs)
-    test_set = dataset_from_path(params.data.test_dirs, params, LABELS, cond_dirs=params.data.test_cond_dirs)
+    data_param = params.data
+    train_set = dataset_from_path(data_param.train_dirs, params, LABELS, cond_dirs=data_param.train_cond_dirs)
+    test_set = dataset_from_path(data_param.test_dirs, params, LABELS, cond_dirs=data_param.test_cond_dirs)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     _train_impl(
@@ -461,17 +468,17 @@ def train_distributed(replica_id, replica_count, port, params):
 
     model = UNet(num_classes=len(LABELS), params=params).cuda()
 
-    if params.model.codec.lower() == 'encodec':
+    if params.codec.lower() == 'encodec':
         codec = Encodec(sample_rate=24000, device='cuda')  # TODO: get this from ocnstructor
-    elif params.model.codec.lower() == 'dac':
+    elif params.codec.lower() == 'dac':
         codec = DAC(sample_rate=24000, device='cuda')
     else:
-        raise Exception(f"codec specified in params.json should either be 'dac' or 'encodec'. Found {params.model.codec}")
+        raise Exception(f"codec specified in params.json should either be 'dac' or 'encodec'. Found {params.codec}")
 
-    train_set = dataset_from_path(params.data.train_dirs, params, LABELS, distributed=True,
-                                  cond_dirs=params.data.train_cond_dirs)
-    test_set = dataset_from_path(params.data.test_dirs, params, LABELS, distributed=True,
-                                 cond_dirs=params.data.test_cond_dirs)
+    train_set = dataset_from_path(params.trainirs, params, LABELS, distributed=True,
+                                  cond_dirs=params.train_cond_dirs)
+    test_set = dataset_from_path(params.test_rs, params, LABELS, distributed=True,
+                                 cond_dirs=params.test_cond_dirs)
     model = DistributedDataParallel(model, device_ids=[replica_id],
                                     find_unused_parameters=True)  # todo: t-foley implementation uses find_unused_parameters=False
 

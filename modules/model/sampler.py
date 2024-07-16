@@ -1,4 +1,5 @@
 import torch
+from tqdm import tqdm
 
 
 class SDESampling:
@@ -37,7 +38,7 @@ class SDESampling:
 
             sigma, m = self.create_schedules(nb_steps)
 
-            for n in range(nb_steps - 1, 0, -1):
+            for n in tqdm(range(nb_steps - 1, 0, -1), desc=f'Running inference for class {classes.item()}'):
                 # begins at t = 1 (n = nb_steps - 1)
                 # stops at t = 2/nb_steps (n=1)
                 
@@ -97,7 +98,8 @@ class SDESampling_batch:
             sigma = sigma.permute((1,0)).unsqueeze(2).to(self.device)
             m = m.permute((1,0)).unsqueeze(2).to(self.device)
 
-            for n in range(nb_steps - 1, 0, -1):
+            for n in tqdm(range(nb_steps - 1, 0, -1), desc=f'Running inference:'):
+
                 # begins at t = 1 (n = nb_steps - 1)
                 # stops at t = 2/nb_steps (n=1)
                 

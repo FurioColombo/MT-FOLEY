@@ -8,8 +8,8 @@ import torch
 import torchaudio as T
 from torchsummary import summary
 
-sys.path.append(str(Path(__file__).parent.parent.absolute()))
-from model.tfmodel import UNet
+sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
+from modules.model.tfmodel import UNet
 LABELS = ['DogBark', 'Footstep', 'GunShot', 'Keyboard', 'MovingMotorVehicle', 'Rain', 'Sneeze_Cough']
 
 

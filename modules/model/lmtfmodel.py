@@ -414,6 +414,7 @@ class UNet(nn.Module):
         time_emb_dim = params.condition.time_emb_dim
         class_emb_dim = params.condition.class_emb_dim
         event_dim = vars(params.condition.event_dims)[params.condition.event_type]
+
         cond_drop_prob = params.condition.cond_prob
         film_type = params.condition.film_type
 
@@ -468,32 +469,33 @@ class UNet(nn.Module):
             nn.SiLU(),
             nn.Linear(classes_dim, class_emb_dim)
         )
+
         print("Model successfully initialized!")
 
-    def forward(self, audio, sigma, classes, events, cond_drop_prob=None):
-        batch, device = audio.shape[0], audio.device
-        x = audio.unsqueeze(1)
-        x = self.conv_1(x)
-        downsampled = []
-        sigma_encoding = self.embedding(sigma)
+    def forward(self, noisy_audio, sigma, classes, events, cond_drop_prob=None, teacher_forcing=False, train: bool=False):
+        assert len(noisy_audio.shape) == 3
+        batch_size, n_codebooks, t_len = noisy_audio.shape
+        device = noisy_audio.device
 
-        # Prepare Conditions(class, event)
+        # PREPARE CONDITIONING
+        # class conditioning
         cond_drop_prob = default(cond_drop_prob, self.cond_drop_prob)
         classes_emb = self.classes_emb(classes)
         if cond_drop_prob[0] > 0:
-            keep_mask = prob_mask_like((batch,), 1 - cond_drop_prob[0], device=device)
-            null_classes_emb = repeat(self.null_classes_emb, 'd -> b d', b=batch)
+            keep_mask = prob_mask_like((batch_size,), 1 - cond_drop_prob[0], device=device)
+            null_classes_emb = repeat(self.null_classes_emb, 'd -> b d', b=batch_size)
 
             classes_emb = torch.where(
                 rearrange(keep_mask, 'b -> b 1'),
                 classes_emb,
                 null_classes_emb
             )
-        c = self.classes_mlp(classes_emb)
+        class_embedding = self.classes_mlp(classes_emb)
 
+        # event conditioning
         if cond_drop_prob[1] > 0:
-            keep_mask = prob_mask_like((batch,), 1 - cond_drop_prob[1], device=device)
-            null_event = repeat(self.null_event_emb, 'd -> b d', b=batch)
+            keep_mask = prob_mask_like((batch_size,), 1 - cond_drop_prob[1], device=device)
+            null_event = repeat(self.null_event_emb, 'd -> b d', b=batch_size)
 
             events = torch.where(
                 rearrange(keep_mask, 'b -> b 1'),
@@ -501,16 +503,53 @@ class UNet(nn.Module):
                 null_event
             ) if events != None else null_event
 
+        target_codes = rearrange(noisy_audio, 'b q t-> q b t')
+        previous_codes = torch.zeros_like(target_codes)
+        gen_codes = []
+
+        for idx, codebook in enumerate(target_codes):
+            if idx > 0:
+                if teacher_forcing:
+                    # todo: implement this
+                    previous_codes = torch.randn_like(target_codes)
+                else:
+                    previous_codes[idx-1, :, :] = generated
+
+            generated = self._codebook_forward(
+                codes=codebook,
+                class_conditioning=class_embedding,
+                previous_codes=previous_codes,
+                sigma=sigma[:, idx, :],
+                events=events
+            )
+            gen_codes.append(generated)
+
+        gen_codes = torch.stack(gen_codes, dim=0)
+        return  rearrange(gen_codes, 'q b t-> b q t')
+
+
+    def _codebook_forward(self, codes, class_conditioning, previous_codes, sigma, events):
+        assert len(codes.shape) == 2
+        # prepare useful variables
+        batch_size, t_len = codes.shape
+        device = codes.device
+
+        # prepare codebook
+        x = codes.unsqueeze(1)
+        x = self.conv_1(x)
+        downsampled = []
+        sigma_encoding = self.embedding(sigma)
+
         # Downsample
         for layer in self.downsample:
-            x = layer(x, sigma_encoding, c, events)
+            x = layer(x, sigma_encoding, class_conditioning, events)
             downsampled.append(x)
 
         # Bottleneck
         if self.sequential:
             if self.sequential == 'lstm':
-                h0 = torch.randn(4, batch, self.mid_dim, device=device)
-                c0 = torch.randn(4, batch, self.mid_dim, device=device)
+                h0 = torch.randn(4, batch_size, self.mid_dim, device=device)
+                c0 = torch.randn(4, batch_size, self.mid_dim, device=device)
                 x = x.permute(0, 2, 1)
                 x, _ = self.lstm(x, (h0, c0))
                 x = self.lstm_mlp(x)
@@ -519,32 +558,24 @@ class UNet(nn.Module):
             if self.sequential == 'attn':
                 x = self.mid_attn(x)
 
-            # todo: implement Mamba case
             if self.sequential == 'mamba':
                 # from SPMamba: https://github.com/JusperLee/SPMamba/blob/main/TFGNet_mamba.py#L558
-                # self.intra_mamba = MambaBlock(in_channels, 1, True)
-                # # self.intra_rnn = nn.LSTM(
-                # #     in_channels, hidden_channels, num_layers=1, batch_first=True, bidirectional=True
-                # # )
-                # from up here
-                # self.lstm = nn.LSTM(
-                #       input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
-                # new code
-                x = x.transpose(1,2)
+                x = x.transpose(1, 2)
                 x = self.bottleneck_mamba(x)
                 x = self.lstm_mlp(x)
-                x = x.permute(0,2,1)
+                x = x.permute(0, 2, 1)
 
             x = x + downsampled[-1]  # residual connection
 
         # Upsample
         for layer, x_dblock in zip(self.upsample, reversed(downsampled)):
             x = torch.cat([x, x_dblock], dim=1)
-            x = layer(x, sigma_encoding, c, events)
+            x = layer(x, sigma_encoding, class_conditioning, events)
 
         x = self.last_conv(x)
         x = x.squeeze(1)
         return x
+
 
     def forward_with_cond_scale(self, audio, sigma, classes, event, cond_scale=1.):
         cond_score = self.forward(audio, sigma, classes, event, cond_drop_prob=[0.0, 0.0])
