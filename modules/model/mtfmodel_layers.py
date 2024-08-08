@@ -586,7 +586,7 @@ class GBlock(nn.Module):
             self.t_convs = nn.ModuleList(
                 [MFilmConvBlock(out_channel, out_channel), MFilmConvBlock(out_channel, out_channel)]
             )
-            self.t_films = nn.ModuleList([MFilm(block_num, 1, out_channel), MFilm(block_num, 1, out_channel)])
+            self.t_films = nn.ModuleList([BFilm(block_num, 1, out_channel), BFilm(block_num, 1, out_channel)])
     def forward(self, x, sigma, c, a):
         size = self._output_size(x.shape[-1])
 

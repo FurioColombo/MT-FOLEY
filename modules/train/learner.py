@@ -383,7 +383,7 @@ class Learner:
             return False
 
     def save_to_checkpoint(self, filename="weights"):
-        if self.step > 0 and self.epoch > 10:
+        if self.step > 0 and self.epoch > 5:
             save_basename = f"{filename}_step-{self.step}.pt"
             save_name = f"{self.model_dir}/{save_basename}"
             print("\nsaving model to:", save_name)

@@ -9,7 +9,7 @@
     "test_cond_dirs": null,
     "sample_rate": 22050,
     "audio_length": 88200,
-    "n_workers": 16
+    "n_workers": 8
   },
 
   "model": {
@@ -50,7 +50,7 @@
 
   "logging": {
     "checkpoint_id": null,
-    "n_epochs_to_checkpoint": 15,
+    "n_epochs_to_checkpoint": 10,
     "n_epochs_to_log": 15,
     "n_steps_to_log": 300,
     "n_steps_to_test": 300,
