@@ -12,4 +12,4 @@ def notify_telegram(message, verbose=False):
         if response.ok is not True:
             print(f'TELEGRAM NOTIFICATION ERROR: response is not OK: {str(response)}.')
     except Exception as e:
-        print(e)
+        print('Telegram notification Exception:', e)

@@ -40,9 +40,18 @@ def print_current_working_dir():
     print(cwd)
 
 
+
+path = os.path.abspath(print.__module__)
+print(path)
+
+'''
 og_dataset_dir = os.path.abspath("./DCASE_2023_Challenge_Task_7_Dataset/eval")
 out_dir = os.path.join(og_dataset_dir, 'temp_resampled_fad_background')
 print('eureka')
 import torch
 torch.cuda.empty_cache()
 #resample_wav_files_in_folder(folder_path=out_dir, target_sr=24000)
+'''
+
+print(True+1)
+print(False+1)

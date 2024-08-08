@@ -1,5 +1,5 @@
 {
-  "CUDA_VISIBLE_DEVICES": "1",
+  "CUDA_VISIBLE_DEVICES": "4,5",
   "max_RAM_usage": 85,
 
   "data": {
@@ -9,23 +9,25 @@
     "test_cond_dirs": null,
     "sample_rate": 22050,
     "audio_length": 88200,
-    "n_workers": 8
+    "n_workers": 16
   },
 
   "model": {
-    "model_dir": "test_debug",
-    "sequential": "lstm",
+    "model_dir": "tfoley_mamba_unet",
+    "sequential": "mamba",
     "factors": [2, 2, 3, 5, 5],
-    "dims": [32, 64, 128, 256, 512, 512],
-    "use_latent": true,
-    "codec": "encodec"
+    "dims":  [16, 32, 64, 128, 256, 512],
+    "use_latent": false,
+    "codec": "encodec",
+    "bottleneck_layers": 1,
+    "bidirectional_bottleneck": true
   },
 
   "condition": {
     "time_emb_dim": 512,
     "class_emb_dim": 512,
     "mid_dim": 512,
-    "film_type": "block",
+    "film_type": "mamba",
     "block_nums": [49, 49, 49, 49, 49, 49, 14],
     "event_type": "rms",
     "event_dims": {
@@ -38,7 +40,7 @@
 
   "training": {
     "lr": 0.0001,
-    "batch_size": 2,
+    "batch_size": 16,
     "ema_rate": 0.999,
     "scheduler_patience_epoch": 25,
     "scheduler_factor": 0.8,
@@ -48,10 +50,10 @@
 
   "logging": {
     "checkpoint_id": null,
-    "n_epochs_to_checkpoint": 25,
-    "n_epochs_to_log": 25,
-    "n_steps_to_log": 125,
-    "n_steps_to_test": 125,
+    "n_epochs_to_checkpoint": 15,
+    "n_epochs_to_log": 15,
+    "n_steps_to_log": 300,
+    "n_steps_to_test": 300,
     "n_bins": 5
   },
 
@@ -61,5 +63,10 @@
     "warmup": 2,
     "active": 3,
     "repeat": 0
+  },
+
+  "telegram": {
+    "apiToken": "7133523436:AAHSM_44T1MFKLhkHxm5myZ7u0o1IE0Xc6Q",
+    "chatID": "275894223"
   }
 }

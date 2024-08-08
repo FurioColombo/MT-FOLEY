@@ -3,6 +3,8 @@ import gc
 import json
 from glob import glob
 
+from torchsummary import summary
+
 import torch
 import torch.nn as nn
 from torch.nn.parallel import DistributedDataParallel
@@ -15,7 +17,7 @@ from modules.model.codec.sources.dacWrapper import DAC
 from modules.utils import notifications
 from modules.utils.file_system import recursive_namespace_to_dict
 from modules.utils.data_sources import dataset_from_path
-from modules.model.tfmodel import UNet
+from modules.model.mtfmodel import UNet
 from modules.model.sampler import SDESampling
 from modules.model.sde import SubVpSdeCos
 from modules.utils.utilities import normalize, plot_env, check_nan, check_RAM_usage
@@ -93,6 +95,7 @@ class Learner:
     # Train
     def train(self, profiler=None):
         device = next(self.model.parameters()).device
+        summary(self.model)
         while self.epoch <= self.params.training.n_epochs:
             self.train_epoch(device=device, prof=profiler)
 
@@ -139,7 +142,7 @@ class Learner:
                                f'\nbest_val_loss: {self.best_val_loss}'
                 notifications.notify_telegram(notification)
             else:
-                notifications.notify_telegram(f'Finished epoch {self.epoch}')
+                notifications.notify_telegram(f'Finished epoch {self.epoch}', verbose=False )
 
             # Save best model's checkpoints
             if self.epoch % self.params.logging.n_epochs_to_checkpoint == 0 or self.epoch == self.params.training.n_epochs:
@@ -168,8 +171,6 @@ class Learner:
         classes = features["class"]
         events = features["event"]
 
-        # TODO: this is temp
-        # audio = self._encode_audio(audio)
         N, T = audio.shape
 
         t = torch.rand(N, 1, device=audio.device)
@@ -210,10 +211,6 @@ class Learner:
             events = features["event"].cuda()
 
             N, T = audio.shape
-
-            # TODO: this is temp
-            # print('audio val_step:', type(audio), audio.device)
-            # audio = self._encode_audio(audio)
 
             t = torch.rand(N, 1, device=audio.device)
             t = (self.sde.t_max - self.sde.t_min) * t + self.sde.t_min
@@ -386,7 +383,7 @@ class Learner:
             return False
 
     def save_to_checkpoint(self, filename="weights"):
-        if self.step > 0 and self.epoch > 30:
+        if self.step > 0 and self.epoch > 10:
             save_basename = f"{filename}_step-{self.step}.pt"
             save_name = f"{self.model_dir}/{save_basename}"
             print("\nsaving model to:", save_name)

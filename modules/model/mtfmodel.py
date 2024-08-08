@@ -3,7 +3,7 @@ from torch import nn
 from einops import rearrange, repeat
 
 from modules.model.mamba_block import MambaBlock
-from modules.model.tfmodel_layers import GBlock, Conv1d, RFF_MLP_Block, Residual, PreNorm, Attention, default, prob_mask_like
+from modules.model.mtfmodel_layers import GBlock, Conv1d, RFF_MLP_Block, Residual, PreNorm, Attention, default, prob_mask_like
 
 # --- U-Net ---
 class UNet(nn.Module):
@@ -30,6 +30,16 @@ class UNet(nn.Module):
         bidirectional_bottleneck = params.model.bidirectional_bottleneck if hasattr(params.model, 'bidirectional_bottleneck') else True
 
         # Pre-conv/emb Layers
+        audio_channels = 1
+        mamba_channels = audio_channels*2
+        bidirectional_mamba = True
+        # self.conv_pre_mamba = nn.Conv1d(in_channels=audio_channels, out_channels=mamba_channels, kernel_size=3, padding=1)
+        # self.pre_mamba = MambaBlock(
+        #             in_channels=mamba_channels,
+        #             n_layer=1,
+        #             bidirectional=bidirectional_mamba
+        #         )
+        # self.conv_post_mamba = nn.Conv1d(in_channels=mamba_channels*(bidirectional_mamba+1), out_channels=dims[0], kernel_size=5, padding=2)
         self.conv_1 = Conv1d(1, dims[0], 5, padding=2)
         self.embedding = RFF_MLP_Block(time_emb_dim)
 
@@ -43,7 +53,19 @@ class UNet(nn.Module):
         for in_dim, out_dim, factor, block_num in zip(dims[:0:-1], dims[-2::-1], factors[::-1], block_nums[::-1]):
             UBlock_list.append(GBlock(in_dim, out_dim, -1 * factor, block_num, film_type, event_dim))
         self.upsample = nn.ModuleList(UBlock_list)
-        self.last_conv = Conv1d(dims[0], 1, 3, padding=1)
+
+        # mamba_channels = dims[0] if dims > 1 else 2
+        # self.conv_post_mamba = nn.Conv1d(in_channels=dims[0], out_channels=mamba_channels, kernel_size=3,
+        #                                 padding=1)
+        self.last_mamba = MambaBlock(
+            in_channels=dims[0],
+            n_layer=1,
+            bidirectional=bidirectional_mamba
+        )
+        self.last_conv = nn.Conv1d(in_channels=dims[0] * (bidirectional_mamba + 1),
+                                         out_channels=1, kernel_size=3, padding=1)
+
+        # self.last_conv = Conv1d(dims[0], 1, 3, padding=1)
 
         # Bottleneck layer
         self.sequential = sequential
@@ -90,6 +112,13 @@ class UNet(nn.Module):
         batch, device = audio.shape[0], audio.device
         x = audio.unsqueeze(1)
         x = self.conv_1(x)
+
+        # x = self.conv_pre_mamba(x)
+        # x = x.transpose(1, 2)
+        # x = self.pre_mamba(x)
+        # x = x.transpose(1, 2)
+        # x = self.conv_post_mamba(x)
+
         downsampled = []
         sigma_encoding = self.embedding(sigma)
 
@@ -137,13 +166,6 @@ class UNet(nn.Module):
 
             if self.sequential == 'mamba':
                 # from SPMamba: https://github.com/JusperLee/SPMamba/blob/main/TFGNet_mamba.py#L558
-                # self.intra_mamba = MambaBlock(in_channels, 1, True)
-                # # self.intra_rnn = nn.LSTM(
-                # #     in_channels, hidden_channels, num_layers=1, batch_first=True, bidirectional=True
-                # # )
-                # from up here
-                # self.lstm = nn.LSTM(
-                #       input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
                 # new code
                 x = x.transpose(1,2)
                 x = self.bottleneck_mamba(x)
@@ -156,6 +178,11 @@ class UNet(nn.Module):
         for layer, x_dblock in zip(self.upsample, reversed(downsampled)):
             x = torch.cat([x, x_dblock], dim=1)
             x = layer(x, sigma_encoding, c, events)
+
+        # Final layers
+        x = x.transpose(1, 2)
+        x = self.last_mamba(x)
+        x = x.transpose(1, 2)
 
         x = self.last_conv(x)
         x = x.squeeze(1)

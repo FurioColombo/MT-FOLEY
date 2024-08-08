@@ -10,7 +10,7 @@ import pydub
 import soundfile as sf
 from scipy.io.wavfile import write
 
-from modules.model.tfmodel import UNet
+from modules.model.tfmodel_layers import UNet
 from modules.model.sampler import SDESampling_batch
 from modules.model.sde import VpSdeCos
 from modules.utils.data_sources import dataset_from_path

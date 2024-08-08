@@ -19,7 +19,7 @@ import os
 import torch
 
 sys.path.append(str(Path(__file__).parent.parent.parent.parent.absolute()))
-from modules.model.tfmodel import UNet
+from modules.model.tfmodel_layers import UNet
 from modules.model.sampler import SDESampling
 from modules.model.sde import VpSdeCos
 from modules.utils.data_sources import dataset_from_path

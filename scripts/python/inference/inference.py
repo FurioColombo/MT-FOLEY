@@ -12,7 +12,7 @@ from scipy.io.wavfile import write
 
 
 sys.path.append(str(Path(__file__).parent.parent.absolute()))
-from modules.model.tfmodel import UNet
+from modules.model.tfmodel_layers import UNet
 from modules.model.sampler import SDESampling_batch
 from modules.model.sde import VpSdeCos
 from modules.utils.audio import adjust_audio_length, get_event_cond, high_pass_filter, resample_audio

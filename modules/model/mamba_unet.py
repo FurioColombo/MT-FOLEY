@@ -3,7 +3,7 @@ from torch import nn
 from einops import rearrange, repeat
 
 from modules.model.mamba_block import MambaBlock
-from modules.model.tfmodel_layers import GBlock, Conv1d, RFF_MLP_Block, Residual, PreNorm, Attention, default, prob_mask_like
+from modules.model.mtfmodel_layers import GBlock, Conv1d, RFF_MLP_Block, Residual, PreNorm, Attention, default, prob_mask_like
 
 # --- U-Net ---
 class UNet(nn.Module):
@@ -137,13 +137,6 @@ class UNet(nn.Module):
 
             if self.sequential == 'mamba':
                 # from SPMamba: https://github.com/JusperLee/SPMamba/blob/main/TFGNet_mamba.py#L558
-                # self.intra_mamba = MambaBlock(in_channels, 1, True)
-                # # self.intra_rnn = nn.LSTM(
-                # #     in_channels, hidden_channels, num_layers=1, batch_first=True, bidirectional=True
-                # # )
-                # from up here
-                # self.lstm = nn.LSTM(
-                #       input_dim, output_dim, num_layers=self.num_layers, batch_first=True, bidirectional=False)
                 # new code
                 x = x.transpose(1,2)
                 x = self.bottleneck_mamba(x)

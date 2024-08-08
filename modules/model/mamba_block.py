@@ -10,6 +10,7 @@ class MambaBlock(nn.Module):
     def __init__(self, in_channels, n_layer=1, bidirectional=False):
         super(MambaBlock, self).__init__()
         self.forward_blocks = nn.ModuleList([])
+        self.backward_blocks = None
         for i in range(n_layer):
             self.forward_blocks.append(
                 Block(
@@ -39,6 +40,7 @@ class MambaBlock(nn.Module):
         for block in self.forward_blocks:
             forward_f, for_residual = block(forward_f, for_residual, inference_params=None)
         residual = (forward_f + for_residual) if for_residual is not None else forward_f
+
 
         if self.backward_blocks is not None:
             back_residual = None

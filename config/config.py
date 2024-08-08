@@ -36,3 +36,7 @@ class Config:
     @staticmethod
     def get_profiler_config():
         return Config.config.profiler
+
+    @staticmethod
+    def get_mamba_config():
+        return Config.config.mamba_model
