@@ -314,7 +314,7 @@ class Learner:
             # sample = high_pass_filter(sample, sr=22050)
 
             event_loss.append(
-                self.loss_fn(test_event.squeeze(0).cpu(), get_event_cond(sample, self.params.conditioning.event_type))
+                self.loss_fn(test_event.squeeze(0).cpu(), get_event_cond(sample, self.params.condition.event_type))
             )
             self.summary_writer.add_audio(f"{LABELS[class_idx]}/audio", sample, step, sample_rate=22050) # todo: is this too heavy on RAM?
             self.summary_writer.add_image(f"{LABELS[class_idx]}/envelope", plot_env(sample), step, dataformats='HWC')
